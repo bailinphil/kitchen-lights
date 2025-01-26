@@ -53,6 +53,11 @@ TWIST twist;
 #define DISPLAY_ADDRESS1 0x72 //This is the default address of the OpenLCD
 
 int cycles = 0;
+float twistFullRed = 256.0;
+float twistFullGreen = 25.0;
+float twistFullBlue = 0.0;
+int twistStartCount = 0;
+char debugStr[255];
 
 void setup()
 {
@@ -73,28 +78,55 @@ void setup()
   Wire.write('-'); //Send clear display command
   Wire.endTransmission();
 
+  //
+
 
   if (twist.begin() == false)
   {
     Serial.println("Twist does not appear to be connected. Please check wiring. Freezing...");
-    while (1)
-      ;
+    while (1);
   }
+
+  twistStartCount = twist.getCount();
+  twist.setColor(100,10,0);
 }
+
+/*
+ * Tinkering around with setting the color of the dial based on how much it has been rotated.
+ * This uses a "snapshot" of where the knob was at the start of the program, looks at how far it
+ * has been turned since, and divides the number of clicks by 25 (which is just over 1 rotation.)
+ * 
+ * then we scale the color up to full orange based on how many revolutions we've done.
+ */
+void updateTwistColor(){
+  int twistCount = twist.getCount();
+  int twistsFromStart = twistCount - twistStartCount;
+  float twistCompletion = max(min(twistsFromStart / 48.0,0.99),0.0);
+  uint8_t amountRed = (uint8_t) (twistFullRed * twistCompletion);
+  uint8_t amountGreen = (uint8_t) (twistFullGreen * twistCompletion);
+  uint8_t amountBlue = (uint8_t) (twistFullBlue * twistCompletion);
+  sprintf(debugStr, "%f %i %i %i", twistCompletion, amountRed, amountGreen, amountBlue);
+  Serial.println(debugStr);
+  twist.setColor(amountRed, amountGreen, amountBlue);
+}
+
 
 void loop()
 {
 
-  int twistCount = twist.getCount();
 //  Serial.println(twistCount);
 
-  if (twist.isPressed())
+  if (twist.isPressed()){
     Serial.println(" Pressed!");
+    twistStartCount = twist.getCount();
+  }
+  updateTwistColor();
 
   uint16_t switchPos = getSwitchPosition();
 
-  i2cSendValue(twistCount, switchPos); //Send the four characters to the display
+  i2cSendValue(twist.getCount(), switchPos); //Send the four characters to the display
 
+  
 
   delay(50); //The maximum update rate of OpenLCD is about 100Hz (10ms). A smaller delay will cause flicker
 }
