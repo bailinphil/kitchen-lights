@@ -8,7 +8,7 @@
 // Information about the LED strip itself
 #define NUM_LEDS    20
 #define CHIPSET     WS2811
-#define COLOR_ORDER GRB
+#define COLOR_ORDER BRG
 CRGB leds[NUM_LEDS];
 
 #define BRIGHTNESS  128
@@ -34,8 +34,8 @@ void setup() {
   delay( 3000 ); // power-up safety delay
   // It's important to set the color correction for your LED strip here,
   // so that colors can be more accurately rendered through the 'temperature' profiles
-  FastLED.addLeds<CHIPSET, 3>(leds, NUM_LEDS);
-  FastLED.addLeds<CHIPSET, 4>(leds, NUM_LEDS);
+  FastLED.addLeds<CHIPSET, 3, COLOR_ORDER>(leds, NUM_LEDS);
+  FastLED.addLeds<CHIPSET, 4, COLOR_ORDER>(leds, NUM_LEDS);
   FastLED.setBrightness( BRIGHTNESS );
 
 
@@ -83,7 +83,7 @@ void loop()
   //updateTwistColor();
 
   int twistsSincePress = twist.getCount() - twistStartCount;
-  int requestedBrightness = min(max(BRIGHTNESS + twistsSincePress * 3, 0),255);
+  int requestedBrightness = min(max(BRIGHTNESS + twistsSincePress * 8, 0),255);
   FastLED.setBrightness(requestedBrightness);
 
   uint16_t switchPos = getSwitchPosition();
