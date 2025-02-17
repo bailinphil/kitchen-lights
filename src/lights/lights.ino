@@ -1,0 +1,189 @@
+// This project uses a half-dozen different libraries and code which derives 
+// from the examples which come from them. See licenses.h for details.
+#include "licenses.h"
+
+// Display the lights.
+#include <FastLED.h>
+
+
+// Information about the LED strip itself
+#define NUM_LEDS    20
+#define CHIPSET     WS2811
+#define COLOR_ORDER BRG
+CRGB leds[NUM_LEDS];
+CRGB color = CRGB::Red;
+#define BRIGHTNESS  20
+
+
+// The Twist is used to allow user to control some details of the
+// current lighting mode.
+#include "SparkFun_Qwiic_Twist_Arduino_Library.h"
+TWIST twist;
+
+// Wire.h is used to write to the 16x2 display which gives the user
+// information about what's going on with the lights, as well as 
+// information about air quality in the room.
+#include <Wire.h>
+#define DISPLAY_ADDRESS1 0x72 //This is the default address of the OpenLCD
+
+int twistStartCount = 0;
+
+// this buffer is used to create helpful debugging messages to send
+// over the serial interface.
+String messageTop;
+String messageBottom;
+
+String modeName[] = {"Standby    "
+,"Routine    "
+,"Cook Day   "
+,"Cook Night "
+,"Dishes     "
+,"Night      "
+,"Sparkles   "
+,"Racetrack  "
+,"Away       "
+,"Adjust TZ  "
+};
+
+
+
+void setup() {
+  setupLEDs();
+  setup16x2();
+  setupTwist();
+}
+
+void setupLEDs(){
+  delay( 3000 ); // power-up safety delay
+  // It's important to set the color correction for your LED strip here,
+  // so that colors can be more accurately rendered through the 'temperature' profiles
+  FastLED.addLeds<CHIPSET, 3, COLOR_ORDER>(leds, NUM_LEDS);
+  FastLED.addLeds<CHIPSET, 4, COLOR_ORDER>(leds, NUM_LEDS);
+  FastLED.setBrightness( BRIGHTNESS );
+}
+
+void setup16x2(){
+  Wire.begin(); //Join the bus as master
+
+  Serial.begin(9600); //Start serial communication at 9600 for debug statements
+
+  //Send the reset command to the display - this forces the cursor to return to the beginning of the display
+  Wire.beginTransmission(DISPLAY_ADDRESS1);
+  Wire.write('|'); //Put LCD into setting mode
+  //Wire.write(150);
+  Wire.write(160); // turn down the green of the backlight
+  Wire.write(188); // turn off the blue of the backlight
+  Wire.write('-'); //Send clear display command
+  Wire.endTransmission();
+}
+
+void setupTwist(){
+    if (twist.begin() == false)
+  {
+    Serial.println("Twist does not appear to be connected. Please check wiring. Freezing...");
+    while (1);
+  }
+
+  twistStartCount = twist.getCount();
+  twist.setColor(100,10,0);
+}
+
+
+void loop()
+{
+
+  if (twist.isPressed()){
+    twistStartCount = twist.getCount();
+  }
+
+  int twistsSincePress = twist.getCount() - twistStartCount;
+  int requestedBrightness = min(max(BRIGHTNESS + twistsSincePress * 8, 0),255);
+  FastLED.setBrightness(requestedBrightness);
+
+  uint16_t switchPos = getSwitchPosition();
+
+  messageTop = modeName[switchPos] + "22:34";
+  messageBottom = "Temp: 68.3";
+  i2cSendValue(messageTop, messageBottom); //Send the four characters to the display
+
+  fill(color);
+  FastLED.show();  
+
+  delay(50); //The maximum update rate of OpenLCD is about 100Hz (10ms). A smaller delay will cause flicker
+}
+
+//Given a number, i2cSendValue chops up an integer into four values and sends them out over I2C
+void i2cSendValue(String messageTop, String messageBottom)
+{
+  Wire.beginTransmission(DISPLAY_ADDRESS1); // transmit to device #1
+
+  Wire.write('|'); //Put LCD into setting mode
+  Wire.write('-'); //Send clear display command
+
+  Wire.print(messageTop);
+  Wire.print(messageBottom);
+
+  Wire.endTransmission(); //Stop I2C transmission
+}
+
+void fill(CRGB color) {
+  for (int i = 0; i < NUM_LEDS; i++) {
+    leds[i] = color;
+  }
+}
+
+int getSwitchPosition()
+{
+
+  uint16_t input;
+  uint16_t val;
+    // read the ADC
+  input = analogRead(A0);
+
+  // Serial.println(input);
+  if(input < 100){
+    // position 0 always reads 0
+    val = 0;
+    color = CRGB::White;
+  } else if(input < 400){
+    // position 1 is about 270
+    val = 1;
+    color = CRGB::Orange;
+  } else if(input < 900){
+    // position 2 is about 710
+    color = CRGB::Red;
+    val = 2;
+  } else if(input < 1300){
+    // position 3 is about 1150
+    color = CRGB::Green;
+    val = 3;
+  } else if(input < 1800){
+    // position 4 is about 1610
+    color = CRGB::Blue;
+    val = 4;
+  } else if(input < 2200){
+    // position 5 is about 2050
+    color = CRGB::Purple;
+    val = 5;
+  } else if(input < 2700){
+    // position 6 is about 2500
+    color = CRGB::Yellow;
+    val = 6;
+  } else if(input < 3200){
+    // position 7 is about 2950
+    color = CRGB::White;
+    val = 7;
+  } else if(input < 3900){
+    // position 8 is about 3650
+    color = CRGB::White;
+    val = 8;
+  } else {
+    // position 9 is always 4095
+    color = CRGB::Black;
+    val = 9;
+  }
+
+  return val;
+}
+
+

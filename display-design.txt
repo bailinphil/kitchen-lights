@@ -1,0 +1,35 @@
+Top Lines:
+----------------
+Standby    22:35
+Routine    22:35
+Cook Day   22:35
+Cook Night 22:35
+Dishes     22:35
+Night      22:35
+Sparkles   22:35
+Racetrack  22:35
+Away       22:35
+Adjust TZ  22:35
+
+
+Bottom Lines:
+----------------
+Temp: 68° 
+Humid: 45.3% 
+CO2: 848ppm 
+Part  1.0: 0.40 
+Part  2.5: 0.70 
+Part  4.0: 0.90
+Part 10.0: 0.60
+VoC Index: 21.11
+Nox Index: 1.00 
+
+
+Adjustments:
+----------------
+Cabinets: 90%
+Ceiling: 100%
+Speed: 100%
+Palette: Rainbow
+Timeout: 30m
+Save
