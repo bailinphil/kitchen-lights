@@ -33,3 +33,14 @@ Speed: 100%
 Palette: Rainbow
 Timeout: 30m
 Save
+
+
+Weather:
+----------------
+In 4h: -24° 100%
+In 8h: 104° 0%
+Aug 29: 104° 40%
+Aug 30: 104° 99%
+
+
+https://api.openweathermap.org/data/3.0/onecall?lat=40.4846938&lon=-79.9370109&appid=b0a7221927d640584c4f57f15f5869b7&units=imperial

@@ -34,8 +34,14 @@ int twistStartCount = 0;
 
 // this buffer is used to create helpful debugging messages to send
 // over the serial interface.
-String messageTop;
-String messageBottom;
+String previousMessageTop = "";
+String messageTop = "";
+String messageBottom = "";
+String weatherReport[10];
+int currentWeatherReportDisplay = 1;
+int millisWhenBottomRowUpdated = 0;
+#define WEATHER_REPORT_MAX_LENGTH 10
+bool isDisplayDirty = true;
 
 String modeName[] = {"Standby    "
 ,"Routine    "
@@ -45,24 +51,44 @@ String modeName[] = {"Standby    "
 ,"Night      "
 ,"Sparkles   "
 ,"Racetrack  "
+,"Twinkle    "
 ,"Away       "
-,"Adjust TZ  "
+};
+
+// make some custom characters:
+byte degree[8] = {
+  0b11100,
+  0b10100,
+  0b11100,
+  0b00000,
+  0b00000,
+  0b00000,
+  0b00000,
+  0b00000
 };
 
 /*
  * WiFi
  */
-#include "WiFi.h"
+#include <Arduino.h>
+
+#include <WiFi.h>
+#include <WiFiMulti.h>
+#include <HTTPClient.h>
+#define USE_SERIAL Serial
+WiFiMulti wifiMulti;
 #include "network_credentials.h"
+#define AP_SSID  "Kitchen_Lights"
+int millisWhenWeatherLastFetched = 0;
 
-#define AP_SSID  "esp32-v6"
-
-static volatile bool wifi_connected = false;
-
-NetworkUDP ntpClient;
-
+/*****************************************************************************
+ *                                                                           *
+ * SETUP FUNCTIONS                                                           *
+ *                                                                           *
+ ****************************************************************************/
 
 void setup() {
+  Serial.begin(115200); // communication speed for debug messages
   setupLEDs();
   setup16x2();
   setupTwist();
@@ -80,9 +106,6 @@ void setupLEDs(){
 
 void setup16x2(){
   Wire.begin(); //Join the bus as master
-
-  Serial.begin(9600); //Start serial communication at 9600 for debug statements
-
   //Send the reset command to the display - this forces the cursor to return to the beginning of the display
   Wire.beginTransmission(DISPLAY_ADDRESS1);
   Wire.write('|'); // Put LCD into setting mode
@@ -90,6 +113,10 @@ void setup16x2(){
   Wire.write(188); // turn off the blue of the backlight
   Wire.write('-'); // Send clear display command
   Wire.endTransmission();
+
+  for(int i=0; i<WEATHER_REPORT_MAX_LENGTH; ++i){
+    weatherReport[i] = "";
+  }
 }
 
 void setupTwist(){
@@ -104,26 +131,27 @@ void setupTwist(){
 }
 
 void setupWiFi(){
-  WiFi.disconnect(true);
-  WiFi.onEvent(WiFiEvent);  // Will call WiFiEvent() from another thread.
-  WiFi.mode(WIFI_MODE_APSTA);
-  //enable ap ipv6 here
-  WiFi.softAPenableIPv6();
-  WiFi.softAP(AP_SSID);
-  //enable sta ipv6 here
-  WiFi.enableIPv6();
-  WiFi.begin(STA_SSID, STA_PASS);
+  wifiMulti.addAP(STA_SSID, STA_PASS);
+  millisWhenWeatherLastFetched = millis();
 }
 
+/*****************************************************************************
+ *                                                                           *
+ * LOOP FUNCTIONS                                                            *
+ *                                                                           *
+ ****************************************************************************/
 
 void loop()
 {
-  if (wifi_connected) {
-    wifiConnectedLoop();
+  int millisSinceWeatherFetch = millis() - millisWhenWeatherLastFetched;
+  if(millisSinceWeatherFetch > 10000){
+    fetchWeatherReport();
   }
-  while (Serial.available()) {
+
+  // why is this code here? what does it do?
+  /*while (Serial.available()) {
     Serial.write(Serial.read());
-  }
+  }*/
 
   if (twist.isPressed()){
     twistStartCount = twist.getCount();
@@ -133,16 +161,18 @@ void loop()
   int requestedBrightness = min(max(BRIGHTNESS + twistsSincePress * 8, 0),255);
   FastLED.setBrightness(requestedBrightness);
 
-  uint16_t switchPos = getSwitchPosition();
+  
 
-  messageTop = modeName[switchPos] + "22:34";
-  messageBottom = "Temp: 68.3";
-  i2cSendValue(messageTop, messageBottom); //Send the four characters to the display
+  messageTop = prepareTopMessage(getSwitchPosition());
+  messageBottom = prepareBottomMessage();
+  if(isDisplayDirty){
+    i2cSendValue(messageTop, messageBottom);
+  }
 
   fill(color);
   FastLED.show();  
 
-  delay(50); //The maximum update rate of OpenLCD is about 100Hz (10ms). A smaller delay will cause flicker
+  delay(10);
 }
 
 //Given a number, i2cSendValue chops up an integer into four values and sends them out over I2C
@@ -157,6 +187,7 @@ void i2cSendValue(String messageTop, String messageBottom)
   Wire.print(messageBottom);
 
   Wire.endTransmission(); //Stop I2C transmission
+  isDisplayDirty = false;
 }
 
 void fill(CRGB color) {
@@ -165,11 +196,34 @@ void fill(CRGB color) {
   }
 }
 
+String prepareTopMessage(uint8_t switchPos){
+  String result = modeName[switchPos] + weatherReport[0];
+  if(!result.equals(previousMessageTop)){
+    isDisplayDirty = true;
+    previousMessageTop = result;
+  }
+  return result;
+}
+
+String prepareBottomMessage(){
+  if(currentWeatherReportDisplay > WEATHER_REPORT_MAX_LENGTH || 
+      weatherReport[currentWeatherReportDisplay].length() == 0){
+    currentWeatherReportDisplay = 1;
+  }
+  String result = weatherReport[currentWeatherReportDisplay];
+  if(millis() - millisWhenBottomRowUpdated > 3000){
+    millisWhenBottomRowUpdated = millis();
+    currentWeatherReportDisplay += 1;
+    isDisplayDirty = true;
+  }
+  return result;
+}
+
 int getSwitchPosition()
 {
 
   uint16_t input;
-  uint16_t val;
+  uint8_t val;
     // read the ADC
   input = analogRead(A0);
 
@@ -177,11 +231,11 @@ int getSwitchPosition()
   if(input < 100){
     // position 0 always reads 0
     val = 0;
-    color = CRGB::White;
+    color = CRGB::Black;
   } else if(input < 400){
     // position 1 is about 270
     val = 1;
-    color = CRGB::Orange;
+    color = CRGB::White;
   } else if(input < 900){
     // position 2 is about 710
     color = CRGB::Red;
@@ -219,96 +273,58 @@ int getSwitchPosition()
   return val;
 }
 
-/*
- * WiFi Helper Functions
- */
+void fetchWeatherReport() {
+  // wait for WiFi connection
+  if ((wifiMulti.run() == WL_CONNECTED)) {
 
-void wifiOnConnect() {
-  Serial.println("STA Connected");
-  Serial.print("STA IPv4: ");
-  Serial.println(WiFi.localIP());
+    HTTPClient http;  
+    http.begin(WEATHER_URL);
+    // start connection and send HTTP header
+    int httpCode = http.GET();
 
-  ntpClient.begin(2390);
-}
-
-void wifiOnDisconnect() {
-  Serial.println("STA Disconnected");
-  delay(1000);
-  WiFi.begin(STA_SSID, STA_PASS);
-}
-
-void wifiConnectedLoop() {
-  //lets check the time
-  const int NTP_PACKET_SIZE = 48;
-  byte ntpPacketBuffer[NTP_PACKET_SIZE];
-
-  IPAddress address;
-  WiFi.hostByName("time.google.com", address);
-  memset(ntpPacketBuffer, 0, NTP_PACKET_SIZE);
-  ntpPacketBuffer[0] = 0b11100011;  // LI, Version, Mode
-  ntpPacketBuffer[1] = 0;           // Stratum, or type of clock
-  ntpPacketBuffer[2] = 6;           // Polling Interval
-  ntpPacketBuffer[3] = 0xEC;        // Peer Clock Precision
-  // 8 bytes of zero for Root Delay & Root Dispersion
-  ntpPacketBuffer[12] = 49;
-  ntpPacketBuffer[13] = 0x4E;
-  ntpPacketBuffer[14] = 49;
-  ntpPacketBuffer[15] = 52;
-  ntpClient.beginPacket(address, 123);  //NTP requests are to port 123
-  ntpClient.write(ntpPacketBuffer, NTP_PACKET_SIZE);
-  ntpClient.endPacket();
-
-  delay(1000);
-
-  int packetLength = ntpClient.parsePacket();
-  if (packetLength) {
-    if (packetLength >= NTP_PACKET_SIZE) {
-      ntpClient.read(ntpPacketBuffer, NTP_PACKET_SIZE);
+    // httpCode will be negative on error
+    if (httpCode > 0) {
+      // HTTP header has been send and Server response header has been handled
+      // file found at server
+      if (httpCode == HTTP_CODE_OK) {
+        String payload = http.getString();
+        parseWeatherReport(payload);
+        millisWhenWeatherLastFetched = millis();
+      }
+    } else {
+      USE_SERIAL.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
     }
-    ntpClient.clear();
-    uint32_t secsSince1900 =
-      (uint32_t)ntpPacketBuffer[40] << 24 | (uint32_t)ntpPacketBuffer[41] << 16 | (uint32_t)ntpPacketBuffer[42] << 8 | ntpPacketBuffer[43];
-    //Serial.printf("Seconds since Jan 1 1900: %u\n", secsSince1900);
-    uint32_t epoch = secsSince1900 - 2208988800UL;
-    //Serial.printf("EPOCH: %u\n", epoch);
-    uint8_t h = (epoch % 86400L) / 3600;
-    uint8_t m = (epoch % 3600) / 60;
-    uint8_t s = (epoch % 60);
-    Serial.printf("UTC: %02u:%02u:%02u (GMT)\n", h, m, s);
+
+    http.end();    
+  }
+}
+
+void parseWeatherReport(String raw){
+  for(int i = 0; i < WEATHER_REPORT_MAX_LENGTH; ++i){
+    weatherReport[i] = "";
   }
 
-  delay(9000);
-}
+  int tokensFound = 0;
+  int tokenStart = 0;
+  for(int i = 0; i < raw.length(); ++i){
+    // expressing the degree symbol seems complex. This method seems to work for me:
+    // https://forum.arduino.cc/t/solved-how-to-print-the-degree-symbol-extended-ascii/438685/40
+    // but I don't yet know how to put that character into my text file. So instead, 
+    // in the text file on the server I'm outputting ^ character where ° should go.
+    // This little check swaps the ^ for a character which appears as a degree symbol on
+    // my display.
+    if(raw.charAt(i) == '^'){
+      raw.setCharAt(i, char(223));
+    }
 
-// WARNING: WiFiEvent is called from a separate FreeRTOS task (thread)!
-void WiFiEvent(WiFiEvent_t event) {
-  switch (event) {
-    case ARDUINO_EVENT_WIFI_AP_START:
-      //can set ap hostname here
-      WiFi.softAPsetHostname(AP_SSID);
-      break;
-    case ARDUINO_EVENT_WIFI_STA_START:
-      //set sta hostname here
-      WiFi.setHostname(AP_SSID);
-      break;
-    case ARDUINO_EVENT_WIFI_STA_CONNECTED: break;
-    case ARDUINO_EVENT_WIFI_STA_GOT_IP6:
-      Serial.print("STA IPv6: ");
-      Serial.println(WiFi.linkLocalIPv6());
-      break;
-    case ARDUINO_EVENT_WIFI_AP_GOT_IP6:
-      Serial.print("AP IPv6: ");
-      Serial.println(WiFi.softAPlinkLocalIPv6());
-      break;
-    case ARDUINO_EVENT_WIFI_STA_GOT_IP:
-      wifiOnConnect();
-      wifi_connected = true;
-      break;
-    case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
-      wifi_connected = false;
-      wifiOnDisconnect();
-      break;
-    default: break;
+    // Use the | character as a delimiter to mark what info should be 
+    if(raw.charAt(i) == '|'){
+      String token = raw.substring(tokenStart,i);
+      i += 1;
+      tokenStart = i;
+      weatherReport[tokensFound] = token;
+      tokensFound += 1;
+    }
   }
 }
 
