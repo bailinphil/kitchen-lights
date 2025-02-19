@@ -43,16 +43,17 @@ int millisWhenBottomRowUpdated = 0;
 #define WEATHER_REPORT_MAX_LENGTH 10
 bool isDisplayDirty = true;
 
-String modeName[] = {"Standby    "
-,"Routine    "
-,"Cook Day   "
-,"Cook Night "
-,"Dishes     "
-,"Night      "
-,"Sparkles   "
-,"Racetrack  "
-,"Twinkle    "
-,"Away       "
+String modeName[] = {
+"Standby"
+,"Routine"
+,"Cook Day"
+,"Cook Night"
+,"Dishes"
+,"Night"
+,"Sparkles"
+,"Racetrack"
+,"Twinkle"
+,"Away"
 };
 
 // make some custom characters:
@@ -184,6 +185,11 @@ void i2cSendValue(String messageTop, String messageBottom)
   Wire.write('-'); //Send clear display command
 
   Wire.print(messageTop);
+  unsigned int charsPrinted = messageTop.length();
+  while( charsPrinted < 16 ){
+    Wire.print(" ");
+    charsPrinted += 1;
+  }
   Wire.print(messageBottom);
 
   Wire.endTransmission(); //Stop I2C transmission
@@ -197,7 +203,7 @@ void fill(CRGB color) {
 }
 
 String prepareTopMessage(uint8_t switchPos){
-  String result = modeName[switchPos] + weatherReport[0];
+  String result = weatherReport[0] + " " + modeName[switchPos];
   if(!result.equals(previousMessageTop)){
     isDisplayDirty = true;
     previousMessageTop = result;
