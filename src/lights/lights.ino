@@ -9,7 +9,7 @@
 #include <FastLED.h>
 
 // Information about the LED strip itself
-#define NUM_LEDS    20
+#define NUM_LEDS    100
 #define CHIPSET     WS2811
 #define COLOR_ORDER BRG
 CRGB leds[NUM_LEDS];
@@ -69,6 +69,20 @@ byte degree[8] = {
 };
 
 /*
+ * Presence
+ */
+#include "SparkFun_STHS34PF80_Arduino_Library.h"
+STHS34PF80_I2C mySensor;
+
+// Values to fill with presence and motion data
+int16_t presenceVal = 0;
+int16_t motionVal = 0;
+float temperatureVal = 0;
+unsigned long millisOfLastPresenceDetection = 0;
+
+
+
+/*
  * WiFi
  */
 #include <Arduino.h>
@@ -80,7 +94,7 @@ byte degree[8] = {
 WiFiMulti wifiMulti;
 #include "network_credentials.h"
 #define AP_SSID  "Kitchen_Lights"
-int millisWhenWeatherLastFetched = 0;
+unsigned long millisWhenWeatherLastFetched = 0;
 
 /*****************************************************************************
  *                                                                           *
@@ -93,6 +107,7 @@ void setup() {
   setupLEDs();
   setup16x2();
   setupTwist();
+  setupPresence();
   setupWiFi();
 }
 
@@ -131,6 +146,16 @@ void setupTwist(){
   twist.setColor(100,10,0);
 }
 
+// https://github.com/sparkfun/SparkFun_STHS34PF80_Arduino_Library
+void setupPresence(){
+    // Establish communication with device 
+    if(mySensor.begin() == false)
+    {
+      Serial.println("Error setting up device - please check wiring.");
+      while(1);
+    }
+}
+
 void setupWiFi(){
   wifiMulti.addAP(STA_SSID, STA_PASS);
   millisWhenWeatherLastFetched = millis();
@@ -144,7 +169,7 @@ void setupWiFi(){
 
 void loop()
 {
-  int millisSinceWeatherFetch = millis() - millisWhenWeatherLastFetched;
+  unsigned long millisSinceWeatherFetch = millis() - millisWhenWeatherLastFetched;
   if(millisSinceWeatherFetch > 10000){
     fetchWeatherReport();
   }
@@ -158,13 +183,27 @@ void loop()
     twistStartCount = twist.getCount();
   }
 
+  int switchPosition = getSwitchPosition();
+  int presenceVal = checkPresence();
+  if(presenceVal != 0){
+    millisOfLastPresenceDetection = millis();
+  }
+
   int twistsSincePress = twist.getCount() - twistStartCount;
   int requestedBrightness = min(max(BRIGHTNESS + twistsSincePress * 8, 0),255);
+
+  // in the night, turn off the lights when we haven't seen someone in front of 
+  // the sensor for a while.
+  if(switchPosition == 5){
+    unsigned long millisSincePresence = millis() - millisOfLastPresenceDetection;
+    if(millisSincePresence > 20000){
+      requestedBrightness = 0;
+    }
+  }
+
   FastLED.setBrightness(requestedBrightness);
 
-  
-
-  messageTop = prepareTopMessage(getSwitchPosition());
+  messageTop = prepareTopMessage(switchPosition);
   messageBottom = prepareBottomMessage();
   if(isDisplayDirty){
     i2cSendValue(messageTop, messageBottom);
@@ -173,12 +212,13 @@ void loop()
   fill(color);
   FastLED.show();  
 
-  delay(10);
+  delay(1);
 }
 
-//Given a number, i2cSendValue chops up an integer into four values and sends them out over I2C
 void i2cSendValue(String messageTop, String messageBottom)
 {
+  Serial.println(messageTop);
+  Serial.println(messageBottom);
   Wire.beginTransmission(DISPLAY_ADDRESS1); // transmit to device #1
 
   Wire.write('|'); //Put LCD into setting mode
@@ -256,7 +296,7 @@ int getSwitchPosition()
     val = 4;
   } else if(input < 2200){
     // position 5 is about 2050
-    color = CRGB::Purple;
+    color = CRGB::Red;
     val = 5;
   } else if(input < 2700){
     // position 6 is about 2500
@@ -332,5 +372,31 @@ void parseWeatherReport(String raw){
       tokensFound += 1;
     }
   }
+}
+
+int16_t checkPresence(){
+  sths34pf80_tmos_drdy_status_t dataReady;
+  mySensor.getDataReady(&dataReady);
+  int16_t result = 0;
+
+  // Check whether sensor has new data - run through loop if data is ready
+  if(dataReady.drdy == 1)
+  {
+    sths34pf80_tmos_func_status_t status;
+    mySensor.getStatus(&status);
+    
+    // If presence flag is high, then print data
+    if(status.pres_flag == 1)
+    {
+      // Presence Units: cm^-1
+      mySensor.getPresenceValue(&presenceVal);
+      result = presenceVal;
+      Serial.print("Presence: ");
+      Serial.print(presenceVal);
+      Serial.println(" cm^-1");
+    }
+  }
+
+  return result;      
 }
 
