@@ -212,7 +212,7 @@ void loop()
   fill(color);
   FastLED.show();  
 
-  delay(1);
+  delay(2);
 }
 
 void i2cSendValue(String messageTop, String messageBottom)
