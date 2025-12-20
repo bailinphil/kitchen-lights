@@ -96,6 +96,8 @@ WiFiMulti wifiMulti;
 #define AP_SSID  "Kitchen_Lights"
 unsigned long millisWhenWeatherLastFetched = 0;
 
+/* */
+
 /*****************************************************************************
  *                                                                           *
  * SETUP FUNCTIONS                                                           *
@@ -298,7 +300,7 @@ int getSwitchPosition()
     // position 5 is about 2050
     color = CRGB::Red;
     val = 5;
-  } else if(input < 2700){
+  } else if(input < 2750){
     // position 6 is about 2500
     color = CRGB::Yellow;
     val = 6;
