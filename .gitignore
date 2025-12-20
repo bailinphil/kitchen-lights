@@ -1,4 +1,7 @@
 network_credentials.h
+src/Weather-Updater/weather_api_key.py
+src/Weather-Updater/weather.txt
+src/Weather-Updater/__pycache__
 
 src/libraries
 
