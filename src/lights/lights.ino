@@ -1,4 +1,4 @@
-// This project uses a half-dozen different libraries and code which derives 
+// This project uses a half-dozen different libraries and code which derives
 // from the examples which come from them. See licenses.h for details.
 #include "licenses.h"
 
@@ -16,6 +16,9 @@ CRGB leds[NUM_LEDS];
 CRGB color = CRGB::Red;
 #define BRIGHTNESS  20
 
+int latestSwitchPosition = -1;
+int earlierSwitchPosition = -1;
+
 /*
  * Twist
  */
@@ -25,7 +28,7 @@ CRGB color = CRGB::Red;
 TWIST twist;
 
 // Wire.h is used to write to the 16x2 display which gives the user
-// information about what's going on with the lights, as well as 
+// information about what's going on with the lights, as well as
 // information about air quality in the room.
 #include <Wire.h>
 #define DISPLAY_ADDRESS1 0x72 //This is the default address of the OpenLCD
@@ -55,6 +58,18 @@ String modeName[] = {
 ,"Twinkle"
 ,"Away"
 };
+
+CRGB modeColor[] = {CRGB::Black,
+CRGB::Red,
+CRGB::Green,
+CRGB::Blue,
+CRGB::Orange,
+CRGB::Red,
+CRGB::BlueViolet,
+CRGB::Goldenrod,
+CRGB::ForestGreen,
+CRGB::DimGray,
+CRGB::Black};
 
 // make some custom characters:
 byte degree[8] = {
@@ -96,7 +111,6 @@ WiFiMulti wifiMulti;
 #define AP_SSID  "Kitchen_Lights"
 unsigned long millisWhenWeatherLastFetched = 0;
 
-/* */
 
 /*****************************************************************************
  *                                                                           *
@@ -150,7 +164,7 @@ void setupTwist(){
 
 // https://github.com/sparkfun/SparkFun_STHS34PF80_Arduino_Library
 void setupPresence(){
-    // Establish communication with device 
+    // Establish communication with device
     if(mySensor.begin() == false)
     {
       Serial.println("Error setting up device - please check wiring.");
@@ -185,7 +199,28 @@ void loop()
     twistStartCount = twist.getCount();
   }
 
-  int switchPosition = getSwitchPosition();
+  int currentSwitchPosition = getSwitchPosition();
+  // sometimes the analog readings of the switch "flicker" out of range for a moment.
+  // account for this by looking at the two previous readings and the current one.
+  // of the three of those, one position should be present in two out of three
+  // readings. That's the one we want to use.
+  //
+  // earlier latest current => next
+  // A A A => A
+  // A A B => A
+  // A B A => A
+  // A B B => B
+  // B A A => A
+  // B A B => B
+  // B B A => B
+  // B B B => B
+  int nextSwitchPosition = earlierSwitchPosition;
+  if(currentSwitchPosition != earlierSwitchPosition && latestSwitchPosition == currentSwitchPosition){
+    nextSwitchPosition = currentSwitchPosition;
+  }
+  earlierSwitchPosition = latestSwitchPosition;
+  latestSwitchPosition = currentSwitchPosition;
+
   int presenceVal = checkPresence();
   if(presenceVal != 0){
     millisOfLastPresenceDetection = millis();
@@ -194,9 +229,9 @@ void loop()
   int twistsSincePress = twist.getCount() - twistStartCount;
   int requestedBrightness = min(max(BRIGHTNESS + twistsSincePress * 8, 0),255);
 
-  // in the night, turn off the lights when we haven't seen someone in front of 
+  // in the night, turn off the lights when we haven't seen someone in front of
   // the sensor for a while.
-  if(switchPosition == 5){
+  if(nextSwitchPosition == 5){
     unsigned long millisSincePresence = millis() - millisOfLastPresenceDetection;
     if(millisSincePresence > 20000){
       requestedBrightness = 0;
@@ -205,14 +240,14 @@ void loop()
 
   FastLED.setBrightness(requestedBrightness);
 
-  messageTop = prepareTopMessage(switchPosition);
+  messageTop = prepareTopMessage(nextSwitchPosition);
   messageBottom = prepareBottomMessage();
   if(isDisplayDirty){
     i2cSendValue(messageTop, messageBottom);
   }
 
-  fill(color);
-  FastLED.show();  
+  fill(modeColor[nextSwitchPosition]);
+  FastLED.show();
 
   delay(2);
 }
@@ -254,7 +289,7 @@ String prepareTopMessage(uint8_t switchPos){
 }
 
 String prepareBottomMessage(){
-  if(currentWeatherReportDisplay > WEATHER_REPORT_MAX_LENGTH || 
+  if(currentWeatherReportDisplay > WEATHER_REPORT_MAX_LENGTH ||
       weatherReport[currentWeatherReportDisplay].length() == 0){
     currentWeatherReportDisplay = 1;
   }
@@ -296,11 +331,11 @@ int getSwitchPosition()
     // position 4 is about 1610
     color = CRGB::Blue;
     val = 4;
-  } else if(input < 2200){
+  } else if(input < 2300){
     // position 5 is about 2050
     color = CRGB::Red;
     val = 5;
-  } else if(input < 2750){
+  } else if(input < 2700){
     // position 6 is about 2500
     color = CRGB::Yellow;
     val = 6;
@@ -325,7 +360,7 @@ void fetchWeatherReport() {
   // wait for WiFi connection
   if ((wifiMulti.run() == WL_CONNECTED)) {
 
-    HTTPClient http;  
+    HTTPClient http;
     http.begin(WEATHER_URL);
     // start connection and send HTTP header
     int httpCode = http.GET();
@@ -343,7 +378,7 @@ void fetchWeatherReport() {
       USE_SERIAL.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
     }
 
-    http.end();    
+    http.end();
   }
 }
 
@@ -357,7 +392,7 @@ void parseWeatherReport(String raw){
   for(int i = 0; i < raw.length(); ++i){
     // expressing the degree symbol seems complex. This method seems to work for me:
     // https://forum.arduino.cc/t/solved-how-to-print-the-degree-symbol-extended-ascii/438685/40
-    // but I don't yet know how to put that character into my text file. So instead, 
+    // but I don't yet know how to put that character into my text file. So instead,
     // in the text file on the server I'm outputting ^ character where ° should go.
     // This little check swaps the ^ for a character which appears as a degree symbol on
     // my display.
@@ -365,7 +400,7 @@ void parseWeatherReport(String raw){
       raw.setCharAt(i, char(223));
     }
 
-    // Use the | character as a delimiter to mark what info should be 
+    // Use the | character as a delimiter to mark what info should be
     if(raw.charAt(i) == '|'){
       String token = raw.substring(tokenStart,i);
       i += 1;
@@ -386,7 +421,7 @@ int16_t checkPresence(){
   {
     sths34pf80_tmos_func_status_t status;
     mySensor.getStatus(&status);
-    
+
     // If presence flag is high, then print data
     if(status.pres_flag == 1)
     {
@@ -399,6 +434,6 @@ int16_t checkPresence(){
     }
   }
 
-  return result;      
+  return result;
 }
 
