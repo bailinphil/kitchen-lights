@@ -134,3 +134,59 @@
  *
  */
 
+ /*
+ * I2C-Generator: 0.3.0
+ * Yaml Version: 2.1.3
+ * Template Version: 0.7.0-112-g190ecaa
+ */
+/*
+ * Copyright (c) 2021, Sensirion AG
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ * * Redistributions of source code must retain the above copyright notice, this
+ *   list of conditions and the following disclaimer.
+ *
+ * * Redistributions in binary form must reproduce the above copyright notice,
+ *   this list of conditions and the following disclaimer in the documentation
+ *   and/or other materials provided with the distribution.
+ *
+ * * Neither the name of Sensirion AG nor the names of its
+ *   contributors may be used to endorse or promote products derived from
+ *   this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ */
+
+ /*
+  Reading CO2, humidity and temperature from the SCD4x
+  By: Paul Clark
+  Based on earlier code by: Nathan Seidle
+  SparkFun Electronics
+  Date: June 3rd, 2021
+  License: MIT. See license file for more information but you can
+  basically do whatever you want with this code.
+
+  Feel like supporting open source hardware?
+  Buy a board from SparkFun! https://www.sparkfun.com/products/18365
+
+  This example prints the current CO2 level, relative humidity, and temperature in C.
+
+  Hardware Connections:
+  Attach RedBoard to computer using a USB cable.
+  Connect SCD40/41 to RedBoard using Qwiic cable.
+  Open Serial Monitor at 115200 baud.
+*/
+

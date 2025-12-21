@@ -112,6 +112,31 @@ WiFiMulti wifiMulti;
 unsigned long millisWhenWeatherLastFetched = 0;
 
 
+/*
+ * Air Quality: Particles, Humidity, Temp, voc, NOx
+ */
+#include <SensirionI2CSen5x.h>
+
+// The used commands use up to 48 bytes. On some Arduino's the default buffer
+// space is not large enough
+#define MAXBUF_REQUIREMENT 48
+
+#if (defined(I2C_BUFFER_LENGTH) &&                 \
+     (I2C_BUFFER_LENGTH >= MAXBUF_REQUIREMENT)) || \
+    (defined(BUFFER_LENGTH) && BUFFER_LENGTH >= MAXBUF_REQUIREMENT)
+#define USE_PRODUCT_INFO
+#endif
+SensirionI2CSen5x sen55;
+
+/*
+ * Air Quality: 
+ */
+#include "SparkFun_SCD4x_Arduino_Library.h" //Click here to get the library: http://librarymanager/All#SparkFun_SCD4x
+SCD4x sen41;
+
+
+
+
 /*****************************************************************************
  *                                                                           *
  * SETUP FUNCTIONS                                                           *
@@ -125,6 +150,8 @@ void setup() {
   setupTwist();
   setupPresence();
   setupWiFi();
+  setupSensiron41();
+  setupSensiron55();
 }
 
 void setupLEDs(){
@@ -177,6 +204,75 @@ void setupWiFi(){
   millisWhenWeatherLastFetched = millis();
 }
 
+void setupSensiron41(){
+  //sen41.enableDebugging(); // Uncomment this line to get helpful debug messages on Serial
+
+  //.begin will start periodic measurements for us (see the later examples for details on how to override this)
+  if (sen41.begin() == false)
+  {
+    Serial.println(F("Sensor not detected. Please check wiring. Freezing..."));
+    while (1);
+  }
+}
+
+void setupSensiron55(){
+    sen55.begin(Wire);
+
+    uint16_t error;
+    char errorMessage[256];
+    error = sen55.deviceReset();
+    if (error) {
+        Serial.print("Error trying to execute deviceReset(): ");
+        errorToString(error, errorMessage, 256);
+        Serial.println(errorMessage);
+    }
+
+// Print SEN55 module information if i2c buffers are large enough
+#ifdef USE_PRODUCT_INFO
+    printSerialNumber();
+    printModuleVersions();
+#endif
+
+    // set a temperature offset in degrees celsius
+    // Note: supported by SEN54 and SEN55 sensors
+    // By default, the temperature and humidity outputs from the sensor
+    // are compensated for the modules self-heating. If the module is
+    // designed into a device, the temperature compensation might need
+    // to be adapted to incorporate the change in thermal coupling and
+    // self-heating of other device components.
+    //
+    // A guide to achieve optimal performance, including references
+    // to mechanical design-in examples can be found in the app note
+    // “SEN5x – Temperature Compensation Instruction” at www.sensirion.com.
+    // Please refer to those application notes for further information
+    // on the advanced compensation settings used
+    // in `setTemperatureOffsetParameters`, `setWarmStartParameter` and
+    // `setRhtAccelerationMode`.
+    //
+    // Adjust tempOffset to account for additional temperature offsets
+    // exceeding the SEN module's self heating.
+    float tempOffset = 0.0;
+    error = sen55.setTemperatureOffsetSimple(tempOffset);
+    if (error) {
+        Serial.print("Error trying to execute setTemperatureOffsetSimple(): ");
+        errorToString(error, errorMessage, 256);
+        Serial.println(errorMessage);
+    } else {
+        Serial.print("Temperature Offset set to ");
+        Serial.print(tempOffset);
+        Serial.println(" deg. Celsius (SEN54/SEN55 only");
+    }
+
+    // Start Measurement
+    error = sen55.startMeasurement();
+    if (error) {
+        Serial.print("Error trying to execute startMeasurement(): ");
+        errorToString(error, errorMessage, 256);
+        Serial.println(errorMessage);
+    }
+
+}
+
 /*****************************************************************************
  *                                                                           *
  * LOOP FUNCTIONS                                                            *
@@ -188,6 +284,8 @@ void loop()
   unsigned long millisSinceWeatherFetch = millis() - millisWhenWeatherLastFetched;
   if(millisSinceWeatherFetch > 10000){
     fetchWeatherReport();
+    loopSensiron41();
+    loopSensiron55();
   }
 
   // why is this code here? what does it do?
@@ -254,8 +352,8 @@ void loop()
 
 void i2cSendValue(String messageTop, String messageBottom)
 {
-  Serial.println(messageTop);
-  Serial.println(messageBottom);
+//  Serial.println(messageTop);
+//  Serial.println(messageBottom);
   Wire.beginTransmission(DISPLAY_ADDRESS1); // transmit to device #1
 
   Wire.write('|'); //Put LCD into setting mode
@@ -436,4 +534,163 @@ int16_t checkPresence(){
 
   return result;
 }
+
+void loopSensiron41(){
+  if (sen41.readMeasurement()) // readMeasurement will return true when fresh data is available
+  {
+    Serial.println();
+
+    Serial.print(F("CO2(ppm):"));
+    Serial.print(sen41.getCO2());
+
+    Serial.print(F("\tTemperature(C):"));
+    Serial.print(sen41.getTemperature(), 1);
+
+    Serial.print(F("\tHumidity(%RH):"));
+    Serial.print(sen41.getHumidity(), 1);
+
+    Serial.println();
+  }
+  else
+  {
+    Serial.print(F("."));
+  }
+}
+
+void loopSensiron55(){
+    uint16_t error;
+    char errorMessage[256];
+
+    // Read Measurement
+    float massConcentrationPm1p0;
+    float massConcentrationPm2p5;
+    float massConcentrationPm4p0;
+    float massConcentrationPm10p0;
+    float ambientHumidity;
+    float ambientTemperature;
+    float vocIndex;
+    float noxIndex;
+
+    error = sen55.readMeasuredValues(
+        massConcentrationPm1p0, massConcentrationPm2p5, massConcentrationPm4p0,
+        massConcentrationPm10p0, ambientHumidity, ambientTemperature, vocIndex,
+        noxIndex);
+
+    if (error) {
+        Serial.print("Error trying to execute readMeasuredValues(): ");
+        errorToString(error, errorMessage, 256);
+        Serial.println(errorMessage);
+    } else {
+        Serial.print("MassConcentrationPm1p0:");
+        Serial.print(massConcentrationPm1p0);
+        Serial.print("\t");
+        Serial.print("MassConcentrationPm2p5:");
+        Serial.print(massConcentrationPm2p5);
+        Serial.print("\t");
+        Serial.print("MassConcentrationPm4p0:");
+        Serial.print(massConcentrationPm4p0);
+        Serial.print("\t");
+        Serial.print("MassConcentrationPm10p0:");
+        Serial.print(massConcentrationPm10p0);
+        Serial.print("\t");
+        Serial.print("AmbientHumidity:");
+        if (isnan(ambientHumidity)) {
+            Serial.print("n/a");
+        } else {
+            Serial.print(ambientHumidity);
+        }
+        Serial.print("\t");
+        Serial.print("AmbientTemperature:");
+        if (isnan(ambientTemperature)) {
+            Serial.print("n/a");
+        } else {
+            Serial.print(ambientTemperature);
+        }
+        Serial.print("\t");
+        Serial.print("VocIndex:");
+        if (isnan(vocIndex)) {
+            Serial.print("n/a");
+        } else {
+            Serial.print(vocIndex);
+        }
+        Serial.print("\t");
+        Serial.print("NoxIndex:");
+        if (isnan(noxIndex)) {
+            Serial.println("n/a");
+        } else {
+            Serial.println(noxIndex);
+        }
+    }
+}
+
+
+/**************************
+ * Sensiron SEN55
+ **************************/
+
+ void printModuleVersions() {
+    uint16_t error;
+    char errorMessage[256];
+
+    unsigned char productName[32];
+    uint8_t productNameSize = 32;
+
+    error = sen55.getProductName(productName, productNameSize);
+
+    if (error) {
+        Serial.print("Error trying to execute getProductName(): ");
+        errorToString(error, errorMessage, 256);
+        Serial.println(errorMessage);
+    } else {
+        Serial.print("ProductName:");
+        Serial.println((char*)productName);
+    }
+
+    uint8_t firmwareMajor;
+    uint8_t firmwareMinor;
+    bool firmwareDebug;
+    uint8_t hardwareMajor;
+    uint8_t hardwareMinor;
+    uint8_t protocolMajor;
+    uint8_t protocolMinor;
+
+    error = sen55.getVersion(firmwareMajor, firmwareMinor, firmwareDebug,
+                             hardwareMajor, hardwareMinor, protocolMajor,
+                             protocolMinor);
+    if (error) {
+        Serial.print("Error trying to execute getVersion(): ");
+        errorToString(error, errorMessage, 256);
+        Serial.println(errorMessage);
+    } else {
+        Serial.print("Firmware: ");
+        Serial.print(firmwareMajor);
+        Serial.print(".");
+        Serial.print(firmwareMinor);
+        Serial.print(", ");
+
+        Serial.print("Hardware: ");
+        Serial.print(hardwareMajor);
+        Serial.print(".");
+        Serial.println(hardwareMinor);
+    }
+}
+
+void printSerialNumber() {
+    uint16_t error;
+    char errorMessage[256];
+    unsigned char serialNumber[32];
+    uint8_t serialNumberSize = 32;
+
+    error = sen55.getSerialNumber(serialNumber, serialNumberSize);
+    if (error) {
+        Serial.print("Error trying to execute getSerialNumber(): ");
+        errorToString(error, errorMessage, 256);
+        Serial.println(errorMessage);
+    } else {
+        Serial.print("SerialNumber:");
+        Serial.println((char*)serialNumber);
+    }
+}
+
+
 
