@@ -3,6 +3,21 @@
 #include "licenses.h"
 
 /*
+ * WiFi
+ */
+#include <Arduino.h>
+
+#include <WiFi.h>
+#include <WiFiMulti.h>
+#include <HTTPClient.h>
+#define USE_SERIAL Serial
+WiFiMulti wifiMulti;
+#include "network_credentials.h"
+#define AP_SSID  "Kitchen_Lights"
+unsigned long millisWhenWeatherLastFetched = 0;
+
+
+/*
  * LED Strip
  */
 // Display the lights.
@@ -74,18 +89,6 @@ CRGB::ForestGreen,
 CRGB::DimGray,
 CRGB::Black};
 
-// make some custom characters:
-byte degree[8] = {
-  0b11100,
-  0b10100,
-  0b11100,
-  0b00000,
-  0b00000,
-  0b00000,
-  0b00000,
-  0b00000
-};
-
 /*
  * Presence
  */
@@ -99,23 +102,6 @@ float temperatureVal = 0;
 unsigned long millisOfLastPresenceDetection = 0;
 #define millisTimeoutAtNight 20000
 #define millisFadeDuration 3000
-
-
-
-/*
- * WiFi
- */
-#include <Arduino.h>
-
-#include <WiFi.h>
-#include <WiFiMulti.h>
-#include <HTTPClient.h>
-#define USE_SERIAL Serial
-WiFiMulti wifiMulti;
-#include "network_credentials.h"
-#define AP_SSID  "Kitchen_Lights"
-unsigned long millisWhenWeatherLastFetched = 0;
-
 
 /*
  * Air Quality: Particles, Humidity, Temp, voc, NOx
