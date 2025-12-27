@@ -33,7 +33,10 @@ TWIST twist;
 #include <Wire.h>
 #define DISPLAY_ADDRESS1 0x72 //This is the default address of the OpenLCD
 
-int twistStartCount = 0;
+#define twistBrightnessWindowSize 20
+int twistBrightnessWindowCenter = 0;
+int twistBrightnessWindowMin = - (twistBrightnessWindowSize / 2);
+int twistBrightnessWindowMax = (twistBrightnessWindowSize / 2);
 
 // this buffer is used to create helpful debugging messages to send
 // over the serial interface.
@@ -94,6 +97,8 @@ int16_t presenceVal = 0;
 int16_t motionVal = 0;
 float temperatureVal = 0;
 unsigned long millisOfLastPresenceDetection = 0;
+#define millisTimeoutAtNight 20000
+#define millisFadeDuration 3000
 
 
 
@@ -131,7 +136,7 @@ SensirionI2CSen5x sen55;
 /*
  * Air Quality: 
  */
-#include "SparkFun_SCD4x_Arduino_Library.h" //Click here to get the library: http://librarymanager/All#SparkFun_SCD4x
+#include "SparkFun_SCD4x_Arduino_Library.h" 
 SCD4x sen41;
 
 
@@ -185,7 +190,9 @@ void setupTwist(){
     while (1);
   }
 
-  twistStartCount = twist.getCount();
+  twistBrightnessWindowCenter = twist.getCount();
+  twistBrightnessWindowMin = twistBrightnessWindowCenter - (twistBrightnessWindowSize / 2);
+  twistBrightnessWindowMax = twistBrightnessWindowCenter + (twistBrightnessWindowSize / 2);
   twist.setColor(100,10,0);
 }
 
@@ -282,7 +289,7 @@ void setupSensiron55(){
 void loop()
 {
   unsigned long millisSinceWeatherFetch = millis() - millisWhenWeatherLastFetched;
-  if(millisSinceWeatherFetch > 10000){
+  if(millisSinceWeatherFetch > 30000){
     fetchWeatherReport();
     loopSensiron41();
     loopSensiron55();
@@ -294,7 +301,10 @@ void loop()
   }*/
 
   if (twist.isPressed()){
-    twistStartCount = twist.getCount();
+    twistBrightnessWindowCenter = twist.getCount();
+    twistBrightnessWindowMin = twist.getCount() - twistBrightnessWindowSize;
+    twistBrightnessWindowMax = twist.getCount() + twistBrightnessWindowSize;
+    
   }
 
   int currentSwitchPosition = getSwitchPosition();
@@ -324,15 +334,32 @@ void loop()
     millisOfLastPresenceDetection = millis();
   }
 
-  int twistsSincePress = twist.getCount() - twistStartCount;
-  int requestedBrightness = min(max(BRIGHTNESS + twistsSincePress * 8, 0),255);
+  int currentTwistPosition = twist.getCount();
+  if(currentTwistPosition < twistBrightnessWindowMin){
+    twistBrightnessWindowMin = currentTwistPosition;
+    twistBrightnessWindowMax = currentTwistPosition + twistBrightnessWindowSize;
+  }
+  if(currentTwistPosition > twistBrightnessWindowMax){
+    twistBrightnessWindowMin = currentTwistPosition - twistBrightnessWindowSize;
+    twistBrightnessWindowMax = currentTwistPosition;
+  }
+  float twistedPositionInWindow = (currentTwistPosition - twistBrightnessWindowMin) / (1.0 * twistBrightnessWindowSize);
+  int requestedBrightness = (int) (255 * twistedPositionInWindow);
 
   // in the night, turn off the lights when we haven't seen someone in front of
   // the sensor for a while.
   if(nextSwitchPosition == 5){
     unsigned long millisSincePresence = millis() - millisOfLastPresenceDetection;
-    if(millisSincePresence > 20000){
-      requestedBrightness = 0;
+    if(millisSincePresence > millisTimeoutAtNight){
+      if(millisSincePresence < millisTimeoutAtNight + millisFadeDuration){
+        // fade out
+        float amountFadeComplete = 1.0 * (millisSincePresence - millisTimeoutAtNight) / millisFadeDuration;
+        int brightnessReduction = (int) (255 * amountFadeComplete);
+        requestedBrightness = max(0,requestedBrightness - brightnessReduction);
+      }
+      else {
+        requestedBrightness = 0;
+      }
     }
   }
 
