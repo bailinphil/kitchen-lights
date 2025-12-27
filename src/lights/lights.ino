@@ -1,11 +1,11 @@
 // This project uses a half-dozen different libraries and code which derives
 // from the examples which come from them. See licenses.h for details.
 #include "licenses.h"
+#include <Arduino.h>
 
 /*
  * WiFi
  */
-#include <Arduino.h>
 
 #include <WiFi.h>
 #include <WiFiMulti.h>
@@ -15,6 +15,7 @@ WiFiMulti wifiMulti;
 #include "network_credentials.h"
 #define AP_SSID  "Kitchen_Lights"
 unsigned long millisWhenWeatherLastFetched = 0;
+unsigned long millisWhenAirLastReported = 0;
 
 
 /*
@@ -274,18 +275,19 @@ void setupSensiron55(){
 
 void loop()
 {
+  unsigned long millisSinceAirReport = millis() - millisWhenAirLastReported;
+  if(millisSinceAirReport > 120500){
+    loopAirQuality();
+    millisWhenAirLastReported = millis();
+
+  }
+
+  
   unsigned long millisSinceWeatherFetch = millis() - millisWhenWeatherLastFetched;
   if(millisSinceWeatherFetch > 30000){
     fetchWeatherReport();
-    loopSensiron41();
-    loopSensiron55();
   }
-
-  // why is this code here? what does it do?
-  /*while (Serial.available()) {
-    Serial.write(Serial.read());
-  }*/
-
+  
   if (twist.isPressed()){
     twistBrightnessWindowCenter = twist.getCount();
     twistBrightnessWindowMin = twist.getCount() - twistBrightnessWindowSize;
@@ -365,8 +367,8 @@ void loop()
 
 void i2cSendValue(String messageTop, String messageBottom)
 {
-//  Serial.println(messageTop);
-//  Serial.println(messageBottom);
+  Serial.println(messageTop);
+  Serial.println(messageBottom);
   Wire.beginTransmission(DISPLAY_ADDRESS1); // transmit to device #1
 
   Wire.write('|'); //Put LCD into setting mode
@@ -382,6 +384,7 @@ void i2cSendValue(String messageTop, String messageBottom)
 
   Wire.endTransmission(); //Stop I2C transmission
   isDisplayDirty = false;
+  Serial.println("--------------");
 }
 
 void fill(CRGB color) {
@@ -473,6 +476,7 @@ void fetchWeatherReport() {
 
     HTTPClient http;
     http.begin(WEATHER_URL);
+    Serial.println(WEATHER_URL);
     // start connection and send HTTP header
     int httpCode = http.GET();
 
@@ -483,6 +487,7 @@ void fetchWeatherReport() {
       if (httpCode == HTTP_CODE_OK) {
         String payload = http.getString();
         parseWeatherReport(payload);
+        Serial.println(payload);
         millisWhenWeatherLastFetched = millis();
       }
     } else {
@@ -548,9 +553,24 @@ int16_t checkPresence(){
   return result;
 }
 
-void loopSensiron41(){
+void loopAirQuality(){
+
+  // some floats to store read values in
+  float ambientHumidity41;
+  float ambientTemperature41;
+  float co2;
+  float massConcentrationPm1p0;
+  float massConcentrationPm2p5;
+  float massConcentrationPm4p0;
+  float massConcentrationPm10p0;
+  float ambientHumidity55;
+  float ambientTemperature55;
+  float vocIndex;
+  float noxIndex;
+
   if (sen41.readMeasurement()) // readMeasurement will return true when fresh data is available
   {
+    /*
     Serial.println();
 
     Serial.print(F("CO2(ppm):"));
@@ -563,79 +583,123 @@ void loopSensiron41(){
     Serial.print(sen41.getHumidity(), 1);
 
     Serial.println();
+    */
+    ambientHumidity41 = sen41.getHumidity();
+    ambientTemperature41 = sen41.getTemperature();
+    co2 = sen41.getCO2();
   }
   else
   {
     Serial.print(F("."));
   }
-}
+  uint16_t error;
+  char errorMessage[256];
 
-void loopSensiron55(){
-    uint16_t error;
-    char errorMessage[256];
+  error = sen55.readMeasuredValues(
+      massConcentrationPm1p0, massConcentrationPm2p5, massConcentrationPm4p0,
+      massConcentrationPm10p0, ambientHumidity55, ambientTemperature55, vocIndex,
+      noxIndex);
 
-    // Read Measurement
-    float massConcentrationPm1p0;
-    float massConcentrationPm2p5;
-    float massConcentrationPm4p0;
-    float massConcentrationPm10p0;
-    float ambientHumidity;
-    float ambientTemperature;
-    float vocIndex;
-    float noxIndex;
-
-    error = sen55.readMeasuredValues(
-        massConcentrationPm1p0, massConcentrationPm2p5, massConcentrationPm4p0,
-        massConcentrationPm10p0, ambientHumidity, ambientTemperature, vocIndex,
-        noxIndex);
-
-    if (error) {
-        Serial.print("Error trying to execute readMeasuredValues(): ");
-        errorToString(error, errorMessage, 256);
-        Serial.println(errorMessage);
-    } else {
-        Serial.print("MassConcentrationPm1p0:");
-        Serial.print(massConcentrationPm1p0);
-        Serial.print("\t");
-        Serial.print("MassConcentrationPm2p5:");
-        Serial.print(massConcentrationPm2p5);
-        Serial.print("\t");
-        Serial.print("MassConcentrationPm4p0:");
-        Serial.print(massConcentrationPm4p0);
-        Serial.print("\t");
-        Serial.print("MassConcentrationPm10p0:");
-        Serial.print(massConcentrationPm10p0);
-        Serial.print("\t");
-        Serial.print("AmbientHumidity:");
-        if (isnan(ambientHumidity)) {
-            Serial.print("n/a");
-        } else {
-            Serial.print(ambientHumidity);
-        }
-        Serial.print("\t");
-        Serial.print("AmbientTemperature:");
-        if (isnan(ambientTemperature)) {
-            Serial.print("n/a");
-        } else {
-            Serial.print(ambientTemperature);
-        }
-        Serial.print("\t");
-        Serial.print("VocIndex:");
-        if (isnan(vocIndex)) {
-            Serial.print("n/a");
-        } else {
-            Serial.print(vocIndex);
-        }
-        Serial.print("\t");
-        Serial.print("NoxIndex:");
-        if (isnan(noxIndex)) {
-            Serial.println("n/a");
-        } else {
-            Serial.println(noxIndex);
-        }
+  if (error) {
+      Serial.print("Error trying to execute readMeasuredValues(): ");
+      errorToString(error, errorMessage, 256);
+      Serial.println(errorMessage);
+  } else {
+      Serial.print("MassConcentrationPm1p0:");
+      Serial.print(massConcentrationPm1p0);
+      Serial.print("\t");
+      Serial.print("MassConcentrationPm2p5:");
+      Serial.print(massConcentrationPm2p5);
+      Serial.print("\t");
+      Serial.print("MassConcentrationPm4p0:");
+      Serial.print(massConcentrationPm4p0);
+      Serial.print("\t");
+      Serial.print("MassConcentrationPm10p0:");
+      Serial.print(massConcentrationPm10p0);
+      Serial.print("\t");
+      Serial.print("AmbientHumidity:");
+      if (isnan(ambientHumidity55)) {
+          Serial.print("n/a");
+      } else {
+          Serial.print(ambientHumidity55);
+      }
+      Serial.print("\t");
+      Serial.print("AmbientTemperature:");
+      if (isnan(ambientTemperature55)) {
+          Serial.print("n/a");
+      } else {
+          Serial.print(ambientTemperature55);
+      }
+      Serial.print("\t");
+      Serial.print("VocIndex:");
+      if (isnan(vocIndex)) {
+          Serial.print("n/a");
+      } else {
+          Serial.print(vocIndex);
+      }
+      Serial.print("\t");
+      Serial.print("NoxIndex:");
+      if (isnan(noxIndex)) {
+          Serial.println("n/a");
+      } else {
+          Serial.println(noxIndex);
+      }
     }
-}
 
+    String airUrl = AIR_URL;
+    airUrl += TEMP_41_PREFIX;
+    airUrl += ambientTemperature41;
+    airUrl += TEMP_55_PREFIX;
+    airUrl += ambientTemperature55;
+    airUrl += CO2_PREFIX;
+    airUrl += co2;
+    airUrl += HUMIDITY_41_PREFIX;
+    airUrl += ambientHumidity41;
+    airUrl += HUMIDITY_55_PREFIX;
+    airUrl += ambientHumidity55;
+    airUrl += PARTICULATE_1p0_PREFIX;
+    airUrl += massConcentrationPm1p0;
+    airUrl += PARTICULATE_2p5_PREFIX;
+    airUrl += massConcentrationPm2p5;
+    airUrl += PARTICULATE_4p0_PREFIX;
+    airUrl += massConcentrationPm4p0;
+    airUrl += PARTICULATE_10_PREFIX;
+    airUrl += massConcentrationPm10p0;
+    airUrl += VOC_PREFIX;
+    airUrl += vocIndex;
+    airUrl += NOX_PREFIX;
+    airUrl += noxIndex;
+    Serial.println(airUrl);
+    sendAirReport(airUrl);
+  }
+
+
+void sendAirReport(String airUrl) {
+  // wait for WiFi connection
+  if ((wifiMulti.run() == WL_CONNECTED)) {
+
+    HTTPClient http;
+    http.begin(airUrl);
+    // start connection and send HTTP header
+    int httpCode = http.GET();
+
+    // httpCode will be negative on error
+    if (httpCode > 0) {
+      // HTTP header has been send and Server response header has been handled
+      // file found at server
+      if (httpCode == HTTP_CODE_OK) {
+        millisWhenAirLastReported = millis();
+        String payload = http.getString();
+        Serial.println(payload);
+
+      }
+    } else {
+      USE_SERIAL.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
+    }
+
+    http.end();
+  }
+}
 
 /**************************
  * Sensiron SEN55
