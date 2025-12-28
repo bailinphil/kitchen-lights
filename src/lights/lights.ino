@@ -79,7 +79,7 @@ String modeName[] = {
 };
 
 CRGB modeColor[] = {CRGB::Black,
-CRGB::Red,
+CRGB::White,
 CRGB::Green,
 CRGB::Blue,
 CRGB::Orange,
@@ -151,6 +151,7 @@ void setupLEDs(){
   // It's important to set the color correction for your LED strip here,
   // so that colors can be more accurately rendered through the 'temperature' profiles
   FastLED.addLeds<CHIPSET, 3, COLOR_ORDER>(leds, NUM_LEDS);
+  FastLED.addLeds<CHIPSET, 1, COLOR_ORDER>(leds, NUM_LEDS);
   FastLED.addLeds<CHIPSET, 4, COLOR_ORDER>(leds, NUM_LEDS);
   FastLED.setBrightness( BRIGHTNESS );
 }
