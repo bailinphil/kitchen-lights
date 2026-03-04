@@ -78,6 +78,8 @@ String modeName[] = {
 ,"Away"
 };
 
+uint8_t twist_colors[][3] = { {0,0,0}, {100,100,0}, {150,150,150}, {150,100,50}, {100,30,0}, {40, 2, 0}, {255,0,0}, {0,255,0}, {0,0,255}, {0,40,40}};
+
 CRGB modeColor[] = {CRGB::Black,
 CRGB::White,
 CRGB::Green,
@@ -280,7 +282,6 @@ void loop()
   if(millisSinceAirReport > 120500){
     loopAirQuality();
     millisWhenAirLastReported = millis();
-
   }
 
   
@@ -353,6 +354,8 @@ void loop()
   }
 
   FastLED.setBrightness(requestedBrightness);
+  uint8_t* tc = twist_colors[currentSwitchPosition];
+  twist.setColor(tc[0],tc[1],tc[2]);
 
   messageTop = prepareTopMessage(nextSwitchPosition);
   messageBottom = prepareBottomMessage();
@@ -569,28 +572,12 @@ void loopAirQuality(){
   float vocIndex;
   float noxIndex;
 
-  if (sen41.readMeasurement()) // readMeasurement will return true when fresh data is available
-  {
-    /*
-    Serial.println();
-
-    Serial.print(F("CO2(ppm):"));
-    Serial.print(sen41.getCO2());
-
-    Serial.print(F("\tTemperature(C):"));
-    Serial.print(sen41.getTemperature(), 1);
-
-    Serial.print(F("\tHumidity(%RH):"));
-    Serial.print(sen41.getHumidity(), 1);
-
-    Serial.println();
-    */
+  // readMeasurement will return true when fresh data is available
+  if (sen41.readMeasurement()) {
     ambientHumidity41 = sen41.getHumidity();
     ambientTemperature41 = sen41.getTemperature();
     co2 = sen41.getCO2();
-  }
-  else
-  {
+  } else {
     Serial.print(F("."));
   }
   uint16_t error;
@@ -605,74 +592,34 @@ void loopAirQuality(){
       Serial.print("Error trying to execute readMeasuredValues(): ");
       errorToString(error, errorMessage, 256);
       Serial.println(errorMessage);
-  } else {
-      Serial.print("MassConcentrationPm1p0:");
-      Serial.print(massConcentrationPm1p0);
-      Serial.print("\t");
-      Serial.print("MassConcentrationPm2p5:");
-      Serial.print(massConcentrationPm2p5);
-      Serial.print("\t");
-      Serial.print("MassConcentrationPm4p0:");
-      Serial.print(massConcentrationPm4p0);
-      Serial.print("\t");
-      Serial.print("MassConcentrationPm10p0:");
-      Serial.print(massConcentrationPm10p0);
-      Serial.print("\t");
-      Serial.print("AmbientHumidity:");
-      if (isnan(ambientHumidity55)) {
-          Serial.print("n/a");
-      } else {
-          Serial.print(ambientHumidity55);
-      }
-      Serial.print("\t");
-      Serial.print("AmbientTemperature:");
-      if (isnan(ambientTemperature55)) {
-          Serial.print("n/a");
-      } else {
-          Serial.print(ambientTemperature55);
-      }
-      Serial.print("\t");
-      Serial.print("VocIndex:");
-      if (isnan(vocIndex)) {
-          Serial.print("n/a");
-      } else {
-          Serial.print(vocIndex);
-      }
-      Serial.print("\t");
-      Serial.print("NoxIndex:");
-      if (isnan(noxIndex)) {
-          Serial.println("n/a");
-      } else {
-          Serial.println(noxIndex);
-      }
-    }
-
-    String airUrl = AIR_URL;
-    airUrl += TEMP_41_PREFIX;
-    airUrl += ambientTemperature41;
-    airUrl += TEMP_55_PREFIX;
-    airUrl += ambientTemperature55;
-    airUrl += CO2_PREFIX;
-    airUrl += co2;
-    airUrl += HUMIDITY_41_PREFIX;
-    airUrl += ambientHumidity41;
-    airUrl += HUMIDITY_55_PREFIX;
-    airUrl += ambientHumidity55;
-    airUrl += PARTICULATE_1p0_PREFIX;
-    airUrl += massConcentrationPm1p0;
-    airUrl += PARTICULATE_2p5_PREFIX;
-    airUrl += massConcentrationPm2p5;
-    airUrl += PARTICULATE_4p0_PREFIX;
-    airUrl += massConcentrationPm4p0;
-    airUrl += PARTICULATE_10_PREFIX;
-    airUrl += massConcentrationPm10p0;
-    airUrl += VOC_PREFIX;
-    airUrl += vocIndex;
-    airUrl += NOX_PREFIX;
-    airUrl += noxIndex;
-    Serial.println(airUrl);
-    sendAirReport(airUrl);
   }
+
+  String airUrl = AIR_URL;
+  airUrl += TEMP_41_PREFIX;
+  airUrl += ambientTemperature41;
+  airUrl += TEMP_55_PREFIX;
+  airUrl += ambientTemperature55;
+  airUrl += CO2_PREFIX;
+  airUrl += co2;
+  airUrl += HUMIDITY_41_PREFIX;
+  airUrl += ambientHumidity41;
+  airUrl += HUMIDITY_55_PREFIX;
+  airUrl += ambientHumidity55;
+  airUrl += PARTICULATE_1p0_PREFIX;
+  airUrl += massConcentrationPm1p0;
+  airUrl += PARTICULATE_2p5_PREFIX;
+  airUrl += massConcentrationPm2p5;
+  airUrl += PARTICULATE_4p0_PREFIX;
+  airUrl += massConcentrationPm4p0;
+  airUrl += PARTICULATE_10_PREFIX;
+  airUrl += massConcentrationPm10p0;
+  airUrl += VOC_PREFIX;
+  airUrl += vocIndex;
+  airUrl += NOX_PREFIX;
+  airUrl += noxIndex;
+  Serial.println(airUrl);
+  sendAirReport(airUrl);
+}
 
 
 void sendAirReport(String airUrl) {
@@ -752,6 +699,7 @@ void sendAirReport(String airUrl) {
         Serial.println(hardwareMinor);
     }
 }
+
 
 void printSerialNumber() {
     uint16_t error;
