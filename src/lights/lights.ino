@@ -136,9 +136,9 @@ unsigned long millisOfLastPresenceDetection = 0;
 SensirionI2CSen5x sen55;
 
 /*
- * Air Quality: 
+ * Air Quality:
  */
-#include "SparkFun_SCD4x_Arduino_Library.h" 
+#include "SparkFun_SCD4x_Arduino_Library.h"
 SCD4x sen41;
 
 
@@ -146,22 +146,22 @@ SCD4x sen41;
 
 /*****************************************************************************
  *                                                                           *
- * SETUP FUNCTIONS                                                           *
+ * SETUP                                                                     *
  *                                                                           *
  ****************************************************************************/
 
 void setup() {
   Serial.begin(115200); // communication speed for debug messages
   setupLEDs();
-  setup16x2();
+  setupDisplay();
   setupTwist();
   setupPresence();
   setupWiFi();
-  setupSensiron41();
-  setupSensiron55();
+  setupCO2Sensor();
+  setupParticulateSensor();
 }
 
-void setupLEDs(){
+void setupLEDs() {
   delay( 3000 ); // power-up safety delay
   // It's important to set the color correction for your LED strip here,
   // so that colors can be more accurately rendered through the 'temperature' profiles
@@ -171,7 +171,7 @@ void setupLEDs(){
   FastLED.setBrightness( BRIGHTNESS );
 }
 
-void setup16x2(){
+void setupDisplay() {
   Wire.begin(); //Join the bus as master
   //Send the reset command to the display - this forces the cursor to return to the beginning of the display
   Wire.beginTransmission(DISPLAY_ADDRESS1);
@@ -181,12 +181,12 @@ void setup16x2(){
   Wire.write('-'); // Send clear display command
   Wire.endTransmission();
 
-  for(int i=0; i<WEATHER_REPORT_MAX_LENGTH; ++i){
+  for (int i = 0; i < WEATHER_REPORT_MAX_LENGTH; ++i) {
     weatherReport[i] = "";
   }
 }
 
-void setupTwist(){
+void setupTwist() {
   if (twist.begin() == false)
   {
     Serial.println("Twist does not appear to be connected. Please check wiring. Freezing...");
@@ -200,21 +200,21 @@ void setupTwist(){
 }
 
 // https://github.com/sparkfun/SparkFun_STHS34PF80_Arduino_Library
-void setupPresence(){
+void setupPresence() {
     // Establish communication with device
-    if(mySensor.begin() == false)
+    if (mySensor.begin() == false)
     {
       Serial.println("Error setting up device - please check wiring.");
       while(1);
     }
 }
 
-void setupWiFi(){
+void setupWiFi() {
   wifiMulti.addAP(STA_SSID, STA_PASS);
   millisWhenWeatherLastFetched = millis();
 }
 
-void setupSensiron41(){
+void setupCO2Sensor() {
   //sen41.enableDebugging(); // Uncomment this line to get helpful debug messages on Serial
 
   //.begin will start periodic measurements for us (see the later examples for details on how to override this)
@@ -225,7 +225,7 @@ void setupSensiron41(){
   }
 }
 
-void setupSensiron55(){
+void setupParticulateSensor() {
     sen55.begin(Wire);
 
     uint16_t error;
@@ -253,7 +253,7 @@ void setupSensiron55(){
     //
     // A guide to achieve optimal performance, including references
     // to mechanical design-in examples can be found in the app note
-    // “SEN5x – Temperature Compensation Instruction” at www.sensirion.com.
+    // "SEN5x – Temperature Compensation Instruction" at www.sensirion.com.
     // Please refer to those application notes for further information
     // on the advanced compensation settings used
     // in `setTemperatureOffsetParameters`, `setWarmStartParameter` and
@@ -280,60 +280,96 @@ void setupSensiron55(){
         errorToString(error, errorMessage, 256);
         Serial.println(errorMessage);
     }
-
 }
+
+void printSerialNumber() {
+    uint16_t error;
+    char errorMessage[256];
+    unsigned char serialNumber[32];
+    uint8_t serialNumberSize = 32;
+
+    error = sen55.getSerialNumber(serialNumber, serialNumberSize);
+    if (error) {
+        Serial.print("Error trying to execute getSerialNumber(): ");
+        errorToString(error, errorMessage, 256);
+        Serial.println(errorMessage);
+    } else {
+        Serial.print("SerialNumber:");
+        Serial.println((char*)serialNumber);
+    }
+}
+
+void printModuleVersions() {
+    uint16_t error;
+    char errorMessage[256];
+
+    unsigned char productName[32];
+    uint8_t productNameSize = 32;
+
+    error = sen55.getProductName(productName, productNameSize);
+
+    if (error) {
+        Serial.print("Error trying to execute getProductName(): ");
+        errorToString(error, errorMessage, 256);
+        Serial.println(errorMessage);
+    } else {
+        Serial.print("ProductName:");
+        Serial.println((char*)productName);
+    }
+
+    uint8_t firmwareMajor;
+    uint8_t firmwareMinor;
+    bool firmwareDebug;
+    uint8_t hardwareMajor;
+    uint8_t hardwareMinor;
+    uint8_t protocolMajor;
+    uint8_t protocolMinor;
+
+    error = sen55.getVersion(firmwareMajor, firmwareMinor, firmwareDebug,
+                             hardwareMajor, hardwareMinor, protocolMajor,
+                             protocolMinor);
+    if (error) {
+        Serial.print("Error trying to execute getVersion(): ");
+        errorToString(error, errorMessage, 256);
+        Serial.println(errorMessage);
+    } else {
+        Serial.print("Firmware: ");
+        Serial.print(firmwareMajor);
+        Serial.print(".");
+        Serial.print(firmwareMinor);
+        Serial.print(", ");
+
+        Serial.print("Hardware: ");
+        Serial.print(hardwareMajor);
+        Serial.print(".");
+        Serial.println(hardwareMinor);
+    }
+}
+
 
 /*****************************************************************************
  *                                                                           *
- * LOOP FUNCTIONS                                                            *
+ * LOOP                                                                      *
  *                                                                           *
  ****************************************************************************/
-
-// Clamp the twist brightness window so the current position stays inside it.
-void updateTwistWindow(int currentTwistPosition) {
-  if (currentTwistPosition < twistBrightnessWindowMin) {
-    twistBrightnessWindowMin = currentTwistPosition;
-    twistBrightnessWindowMax = currentTwistPosition + twistBrightnessWindowSize;
-  }
-  if (currentTwistPosition > twistBrightnessWindowMax) {
-    twistBrightnessWindowMin = currentTwistPosition - twistBrightnessWindowSize;
-    twistBrightnessWindowMax = currentTwistPosition;
-  }
-}
-
-// In Night mode, fade brightness to zero after the presence timeout expires.
-int applyNightFade(int brightness) {
-  unsigned long millisSincePresence = millis() - millisOfLastPresenceDetection;
-  if (millisSincePresence <= millisTimeoutAtNight) {
-    return brightness;
-  }
-  if (millisSincePresence < millisTimeoutAtNight + millisFadeDuration) {
-    float amountFadeComplete = 1.0 * (millisSincePresence - millisTimeoutAtNight) / millisFadeDuration;
-    int brightnessReduction = (int)(255 * amountFadeComplete);
-    return max(0, brightness - brightnessReduction);
-  }
-  return 0;
-}
 
 void loop()
 {
   unsigned long millisSinceAirReport = millis() - millisWhenAirLastReported;
-  if(millisSinceAirReport > 120500){
-    loopAirQuality();
+  if (millisSinceAirReport > 120500) {
+    reportAirQuality();
     millisWhenAirLastReported = millis();
   }
 
-  
   unsigned long millisSinceWeatherFetch = millis() - millisWhenWeatherLastFetched;
-  if(millisSinceWeatherFetch > 30000){
+  if (millisSinceWeatherFetch > 30000) {
     fetchWeatherReport();
   }
-  
-  if (twist.isPressed()){
+
+  if (twist.isPressed()) {
     twistBrightnessWindowCenter = twist.getCount();
     twistBrightnessWindowMin = twist.getCount() - twistBrightnessWindowSize;
     twistBrightnessWindowMax = twist.getCount() + twistBrightnessWindowSize;
-    
   }
 
   int currentSwitchPosition = getSwitchPosition();
@@ -352,7 +388,7 @@ void loop()
   // B B A => B
   // B B B => B
   int nextSwitchPosition = earlierSwitchPosition;
-  if(currentSwitchPosition != earlierSwitchPosition && latestSwitchPosition == currentSwitchPosition){
+  if (currentSwitchPosition != earlierSwitchPosition && latestSwitchPosition == currentSwitchPosition) {
     nextSwitchPosition = currentSwitchPosition;
   }
   earlierSwitchPosition = latestSwitchPosition;
@@ -364,7 +400,7 @@ void loop()
   }
 
   int currentTwistPosition = twist.getCount();
-  updateTwistWindow(currentTwistPosition);
+  clampTwistWindow(currentTwistPosition);
   float twistedPositionInWindow = (currentTwistPosition - twistBrightnessWindowMin) / (1.0 * twistBrightnessWindowSize);
   int requestedBrightness = (int)(255 * twistedPositionInWindow);
 
@@ -379,18 +415,47 @@ void loop()
 
   messageTop = prepareTopMessage(nextSwitchPosition);
   messageBottom = prepareBottomMessage();
-  if(isDisplayDirty){
-    i2cSendValue(messageTop, messageBottom);
+  if (isDisplayDirty) {
+    updateDisplay(messageTop, messageBottom);
   }
 
-  fill(modeColor[nextSwitchPosition]);
+  setAllLEDs(modeColor[nextSwitchPosition]);
   FastLED.show();
 
   delay(2);
 }
 
-void i2cSendValue(String messageTop, String messageBottom)
-{
+
+/*****************************************************************************
+ *                                                                           *
+ * DISPLAY                                                                   *
+ *                                                                           *
+ ****************************************************************************/
+
+String prepareTopMessage(uint8_t switchPos) {
+  String result = weatherReport[0] + " " + modeName[switchPos];
+  if (!result.equals(previousMessageTop)) {
+    isDisplayDirty = true;
+    previousMessageTop = result;
+  }
+  return result;
+}
+
+String prepareBottomMessage() {
+  if (currentWeatherReportDisplay > WEATHER_REPORT_MAX_LENGTH ||
+      weatherReport[currentWeatherReportDisplay].length() == 0) {
+    currentWeatherReportDisplay = 1;
+  }
+  String result = weatherReport[currentWeatherReportDisplay];
+  if (millis() - millisWhenBottomRowUpdated > 3000) {
+    millisWhenBottomRowUpdated = millis();
+    currentWeatherReportDisplay += 1;
+    isDisplayDirty = true;
+  }
+  return result;
+}
+
+void updateDisplay(String messageTop, String messageBottom) {
   Serial.println(messageTop);
   Serial.println(messageBottom);
   Wire.beginTransmission(DISPLAY_ADDRESS1); // transmit to device #1
@@ -411,34 +476,25 @@ void i2cSendValue(String messageTop, String messageBottom)
   Serial.println("--------------");
 }
 
-void fill(CRGB color) {
+
+/*****************************************************************************
+ *                                                                           *
+ * LEDS                                                                      *
+ *                                                                           *
+ ****************************************************************************/
+
+void setAllLEDs(CRGB color) {
   for (int i = 0; i < NUM_LEDS; i++) {
     leds[i] = color;
   }
 }
 
-String prepareTopMessage(uint8_t switchPos){
-  String result = weatherReport[0] + " " + modeName[switchPos];
-  if(!result.equals(previousMessageTop)){
-    isDisplayDirty = true;
-    previousMessageTop = result;
-  }
-  return result;
-}
 
-String prepareBottomMessage(){
-  if(currentWeatherReportDisplay > WEATHER_REPORT_MAX_LENGTH ||
-      weatherReport[currentWeatherReportDisplay].length() == 0){
-    currentWeatherReportDisplay = 1;
-  }
-  String result = weatherReport[currentWeatherReportDisplay];
-  if(millis() - millisWhenBottomRowUpdated > 3000){
-    millisWhenBottomRowUpdated = millis();
-    currentWeatherReportDisplay += 1;
-    isDisplayDirty = true;
-  }
-  return result;
-}
+/*****************************************************************************
+ *                                                                           *
+ * INPUT                                                                     *
+ *                                                                           *
+ ****************************************************************************/
 
 int getSwitchPosition() {
   uint16_t input = analogRead(A0);
@@ -479,6 +535,69 @@ int getSwitchPosition() {
   return val;
 }
 
+// Clamp the twist brightness window so the current position stays inside it.
+void clampTwistWindow(int currentTwistPosition) {
+  if (currentTwistPosition < twistBrightnessWindowMin) {
+    twistBrightnessWindowMin = currentTwistPosition;
+    twistBrightnessWindowMax = currentTwistPosition + twistBrightnessWindowSize;
+  }
+  if (currentTwistPosition > twistBrightnessWindowMax) {
+    twistBrightnessWindowMin = currentTwistPosition - twistBrightnessWindowSize;
+    twistBrightnessWindowMax = currentTwistPosition;
+  }
+}
+
+
+/*****************************************************************************
+ *                                                                           *
+ * PRESENCE                                                                  *
+ *                                                                           *
+ ****************************************************************************/
+
+int16_t checkPresence() {
+  sths34pf80_tmos_drdy_status_t dataReady;
+  mySensor.getDataReady(&dataReady);
+
+  // Check whether sensor has new data - run through loop if data is ready
+  if (dataReady.drdy == 1) {
+    sths34pf80_tmos_func_status_t status;
+    mySensor.getStatus(&status);
+
+    // If presence flag is high, then print data
+    if (status.pres_flag == 1) {
+      // Presence Units: cm^-1
+      mySensor.getPresenceValue(&presenceVal);
+      Serial.print("Presence: ");
+      Serial.print(presenceVal);
+      Serial.println(" cm^-1");
+      return presenceVal;
+    }
+  }
+
+  return 0;
+}
+
+// In Night mode, fade brightness to zero after the presence timeout expires.
+int applyNightFade(int brightness) {
+  unsigned long millisSincePresence = millis() - millisOfLastPresenceDetection;
+  if (millisSincePresence <= millisTimeoutAtNight) {
+    return brightness;
+  }
+  if (millisSincePresence < millisTimeoutAtNight + millisFadeDuration) {
+    float amountFadeComplete = 1.0 * (millisSincePresence - millisTimeoutAtNight) / millisFadeDuration;
+    int brightnessReduction = (int)(255 * amountFadeComplete);
+    return max(0, brightness - brightnessReduction);
+  }
+  return 0;
+}
+
+
+/*****************************************************************************
+ *                                                                           *
+ * WEATHER                                                                   *
+ *                                                                           *
+ ****************************************************************************/
+
 void fetchWeatherReport() {
   // wait for WiFi connection
   if ((wifiMulti.run() == WL_CONNECTED)) {
@@ -507,26 +626,26 @@ void fetchWeatherReport() {
   }
 }
 
-void parseWeatherReport(String raw){
-  for(int i = 0; i < WEATHER_REPORT_MAX_LENGTH; ++i){
+void parseWeatherReport(String raw) {
+  for (int i = 0; i < WEATHER_REPORT_MAX_LENGTH; ++i) {
     weatherReport[i] = "";
   }
 
   int tokensFound = 0;
   int tokenStart = 0;
-  for(int i = 0; i < raw.length(); ++i){
+  for (int i = 0; i < raw.length(); ++i) {
     // expressing the degree symbol seems complex. This method seems to work for me:
     // https://forum.arduino.cc/t/solved-how-to-print-the-degree-symbol-extended-ascii/438685/40
     // but I don't yet know how to put that character into my text file. So instead,
     // in the text file on the server I'm outputting ^ character where ° should go.
     // This little check swaps the ^ for a character which appears as a degree symbol on
     // my display.
-    if(raw.charAt(i) == '^'){
+    if (raw.charAt(i) == '^') {
       raw.setCharAt(i, char(223));
     }
 
     // Use the | character as a delimiter to mark what info should be
-    if(raw.charAt(i) == '|'){
+    if (raw.charAt(i) == '|') {
       String token = raw.substring(tokenStart,i);
       i += 1;
       tokenStart = i;
@@ -536,30 +655,14 @@ void parseWeatherReport(String raw){
   }
 }
 
-int16_t checkPresence() {
-  sths34pf80_tmos_drdy_status_t dataReady;
-  mySensor.getDataReady(&dataReady);
 
-  // Check whether sensor has new data - run through loop if data is ready
-  if (dataReady.drdy == 1) {
-    sths34pf80_tmos_func_status_t status;
-    mySensor.getStatus(&status);
+/*****************************************************************************
+ *                                                                           *
+ * AIR QUALITY                                                               *
+ *                                                                           *
+ ****************************************************************************/
 
-    // If presence flag is high, then print data
-    if (status.pres_flag == 1) {
-      // Presence Units: cm^-1
-      mySensor.getPresenceValue(&presenceVal);
-      Serial.print("Presence: ");
-      Serial.print(presenceVal);
-      Serial.println(" cm^-1");
-      return presenceVal;
-    }
-  }
-
-  return 0;
-}
-
-void loopAirQuality(){
+void reportAirQuality() {
 
   // some floats to store read values in
   float ambientHumidity41;
@@ -623,7 +726,6 @@ void loopAirQuality(){
   sendAirReport(airUrl);
 }
 
-
 void sendAirReport(String airUrl) {
   // wait for WiFi connection
   if ((wifiMulti.run() == WL_CONNECTED)) {
@@ -650,75 +752,3 @@ void sendAirReport(String airUrl) {
     http.end();
   }
 }
-
-/**************************
- * Sensiron SEN55
- **************************/
-
- void printModuleVersions() {
-    uint16_t error;
-    char errorMessage[256];
-
-    unsigned char productName[32];
-    uint8_t productNameSize = 32;
-
-    error = sen55.getProductName(productName, productNameSize);
-
-    if (error) {
-        Serial.print("Error trying to execute getProductName(): ");
-        errorToString(error, errorMessage, 256);
-        Serial.println(errorMessage);
-    } else {
-        Serial.print("ProductName:");
-        Serial.println((char*)productName);
-    }
-
-    uint8_t firmwareMajor;
-    uint8_t firmwareMinor;
-    bool firmwareDebug;
-    uint8_t hardwareMajor;
-    uint8_t hardwareMinor;
-    uint8_t protocolMajor;
-    uint8_t protocolMinor;
-
-    error = sen55.getVersion(firmwareMajor, firmwareMinor, firmwareDebug,
-                             hardwareMajor, hardwareMinor, protocolMajor,
-                             protocolMinor);
-    if (error) {
-        Serial.print("Error trying to execute getVersion(): ");
-        errorToString(error, errorMessage, 256);
-        Serial.println(errorMessage);
-    } else {
-        Serial.print("Firmware: ");
-        Serial.print(firmwareMajor);
-        Serial.print(".");
-        Serial.print(firmwareMinor);
-        Serial.print(", ");
-
-        Serial.print("Hardware: ");
-        Serial.print(hardwareMajor);
-        Serial.print(".");
-        Serial.println(hardwareMinor);
-    }
-}
-
-
-void printSerialNumber() {
-    uint16_t error;
-    char errorMessage[256];
-    unsigned char serialNumber[32];
-    uint8_t serialNumberSize = 32;
-
-    error = sen55.getSerialNumber(serialNumber, serialNumberSize);
-    if (error) {
-        Serial.print("Error trying to execute getSerialNumber(): ");
-        errorToString(error, errorMessage, 256);
-        Serial.println(errorMessage);
-    } else {
-        Serial.print("SerialNumber:");
-        Serial.println((char*)serialNumber);
-    }
-}
-
-
-
