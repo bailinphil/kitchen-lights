@@ -66,31 +66,44 @@ int millisWhenBottomRowUpdated = 0;
 bool isDisplayDirty = true;
 
 String modeName[] = {
-"Standby"
-,"Routine"
-,"Cook Day"
-,"Cook Night"
-,"Dishes"
-,"Night"
-,"Sparkles"
-,"Racetrack"
-,"Twinkle"
-,"Away"
+  "Standby",
+  "Routine",
+  "Cook Day",
+  "Cook Night",
+  "Dishes",
+  "Night",
+  "Sparkles",
+  "Racetrack",
+  "Twinkle",
+  "Away",
 };
 
-uint8_t twist_colors[][3] = { {0,0,0}, {100,100,0}, {150,150,150}, {150,100,50}, {100,30,0}, {40, 2, 0}, {255,0,0}, {0,255,0}, {0,0,255}, {0,40,40}};
+uint8_t twist_colors[][3] = {
+  {  0,   0,   0},  // Standby
+  {100, 100,   0},  // Routine
+  {150, 150, 150},  // Cook Day
+  {150, 100,  50},  // Cook Night
+  {100,  30,   0},  // Dishes
+  { 40,   2,   0},  // Night
+  {255,   0,   0},  // Sparkles
+  {  0, 255,   0},  // Racetrack
+  {  0,   0, 255},  // Twinkle
+  {  0,  40,  40},  // Away
+};
 
-CRGB modeColor[] = {CRGB::Black,
-CRGB::White,
-CRGB::Green,
-CRGB::Blue,
-CRGB::Orange,
-CRGB::Red,
-CRGB::BlueViolet,
-CRGB::Goldenrod,
-CRGB::ForestGreen,
-CRGB::DimGray,
-CRGB::Black};
+CRGB modeColor[] = {
+  CRGB::Black,       // Standby
+  CRGB::White,       // Routine
+  CRGB::Green,       // Cook Day
+  CRGB::Blue,        // Cook Night
+  CRGB::Orange,      // Dishes
+  CRGB::Red,         // Night
+  CRGB::BlueViolet,  // Sparkles
+  CRGB::Goldenrod,   // Racetrack
+  CRGB::ForestGreen, // Twinkle
+  CRGB::DimGray,     // Away
+  CRGB::Black,
+};
 
 /*
  * Presence
@@ -276,6 +289,32 @@ void setupSensiron55(){
  *                                                                           *
  ****************************************************************************/
 
+// Clamp the twist brightness window so the current position stays inside it.
+void updateTwistWindow(int currentTwistPosition) {
+  if (currentTwistPosition < twistBrightnessWindowMin) {
+    twistBrightnessWindowMin = currentTwistPosition;
+    twistBrightnessWindowMax = currentTwistPosition + twistBrightnessWindowSize;
+  }
+  if (currentTwistPosition > twistBrightnessWindowMax) {
+    twistBrightnessWindowMin = currentTwistPosition - twistBrightnessWindowSize;
+    twistBrightnessWindowMax = currentTwistPosition;
+  }
+}
+
+// In Night mode, fade brightness to zero after the presence timeout expires.
+int applyNightFade(int brightness) {
+  unsigned long millisSincePresence = millis() - millisOfLastPresenceDetection;
+  if (millisSincePresence <= millisTimeoutAtNight) {
+    return brightness;
+  }
+  if (millisSincePresence < millisTimeoutAtNight + millisFadeDuration) {
+    float amountFadeComplete = 1.0 * (millisSincePresence - millisTimeoutAtNight) / millisFadeDuration;
+    int brightnessReduction = (int)(255 * amountFadeComplete);
+    return max(0, brightness - brightnessReduction);
+  }
+  return 0;
+}
+
 void loop()
 {
   unsigned long millisSinceAirReport = millis() - millisWhenAirLastReported;
@@ -319,38 +358,19 @@ void loop()
   earlierSwitchPosition = latestSwitchPosition;
   latestSwitchPosition = currentSwitchPosition;
 
-  int presenceVal = checkPresence();
-  if(presenceVal != 0){
+  int detectedPresence = checkPresence();
+  if (detectedPresence != 0) {
     millisOfLastPresenceDetection = millis();
   }
 
   int currentTwistPosition = twist.getCount();
-  if(currentTwistPosition < twistBrightnessWindowMin){
-    twistBrightnessWindowMin = currentTwistPosition;
-    twistBrightnessWindowMax = currentTwistPosition + twistBrightnessWindowSize;
-  }
-  if(currentTwistPosition > twistBrightnessWindowMax){
-    twistBrightnessWindowMin = currentTwistPosition - twistBrightnessWindowSize;
-    twistBrightnessWindowMax = currentTwistPosition;
-  }
+  updateTwistWindow(currentTwistPosition);
   float twistedPositionInWindow = (currentTwistPosition - twistBrightnessWindowMin) / (1.0 * twistBrightnessWindowSize);
-  int requestedBrightness = (int) (255 * twistedPositionInWindow);
+  int requestedBrightness = (int)(255 * twistedPositionInWindow);
 
-  // in the night, turn off the lights when we haven't seen someone in front of
-  // the sensor for a while.
-  if(nextSwitchPosition == 5){
-    unsigned long millisSincePresence = millis() - millisOfLastPresenceDetection;
-    if(millisSincePresence > millisTimeoutAtNight){
-      if(millisSincePresence < millisTimeoutAtNight + millisFadeDuration){
-        // fade out
-        float amountFadeComplete = 1.0 * (millisSincePresence - millisTimeoutAtNight) / millisFadeDuration;
-        int brightnessReduction = (int) (255 * amountFadeComplete);
-        requestedBrightness = max(0,requestedBrightness - brightnessReduction);
-      }
-      else {
-        requestedBrightness = 0;
-      }
-    }
+  // In Night mode, turn off the lights when no presence has been detected for a while.
+  if (nextSwitchPosition == 5) {
+    requestedBrightness = applyNightFade(requestedBrightness);
   }
 
   FastLED.setBrightness(requestedBrightness);
@@ -380,9 +400,9 @@ void i2cSendValue(String messageTop, String messageBottom)
 
   Wire.print(messageTop);
   unsigned int charsPrinted = messageTop.length();
-  while( charsPrinted < 16 ){
+  while (charsPrinted < 16) {
     Wire.print(" ");
-    charsPrinted += 1;
+    charsPrinted++;
   }
   Wire.print(messageBottom);
 
@@ -420,55 +440,40 @@ String prepareBottomMessage(){
   return result;
 }
 
-int getSwitchPosition()
-{
-
-  uint16_t input;
+int getSwitchPosition() {
+  uint16_t input = analogRead(A0);
   uint8_t val;
-    // read the ADC
-  input = analogRead(A0);
 
-  // Serial.println(input);
-  if(input < 100){
+  if (input < 100) {
     // position 0 always reads 0
-    val = 0;
-    color = CRGB::Black;
-  } else if(input < 400){
+    val = 0; color = CRGB::Black;
+  } else if (input < 400) {
     // position 1 is about 270
-    val = 1;
-    color = CRGB::White;
-  } else if(input < 900){
+    val = 1; color = CRGB::White;
+  } else if (input < 900) {
     // position 2 is about 710
-    color = CRGB::Red;
-    val = 2;
-  } else if(input < 1300){
+    val = 2; color = CRGB::Red;
+  } else if (input < 1300) {
     // position 3 is about 1150
-    color = CRGB::Green;
-    val = 3;
-  } else if(input < 1800){
+    val = 3; color = CRGB::Green;
+  } else if (input < 1800) {
     // position 4 is about 1610
-    color = CRGB::Blue;
-    val = 4;
-  } else if(input < 2300){
+    val = 4; color = CRGB::Blue;
+  } else if (input < 2300) {
     // position 5 is about 2050
-    color = CRGB::Red;
-    val = 5;
-  } else if(input < 2700){
+    val = 5; color = CRGB::Red;
+  } else if (input < 2700) {
     // position 6 is about 2500
-    color = CRGB::Yellow;
-    val = 6;
-  } else if(input < 3200){
+    val = 6; color = CRGB::Yellow;
+  } else if (input < 3200) {
     // position 7 is about 2950
-    color = CRGB::White;
-    val = 7;
-  } else if(input < 3900){
+    val = 7; color = CRGB::White;
+  } else if (input < 3900) {
     // position 8 is about 3650
-    color = CRGB::White;
-    val = 8;
+    val = 8; color = CRGB::White;
   } else {
     // position 9 is always 4095
-    color = CRGB::Black;
-    val = 9;
+    val = 9; color = CRGB::Black;
   }
 
   return val;
@@ -531,30 +536,27 @@ void parseWeatherReport(String raw){
   }
 }
 
-int16_t checkPresence(){
+int16_t checkPresence() {
   sths34pf80_tmos_drdy_status_t dataReady;
   mySensor.getDataReady(&dataReady);
-  int16_t result = 0;
 
   // Check whether sensor has new data - run through loop if data is ready
-  if(dataReady.drdy == 1)
-  {
+  if (dataReady.drdy == 1) {
     sths34pf80_tmos_func_status_t status;
     mySensor.getStatus(&status);
 
     // If presence flag is high, then print data
-    if(status.pres_flag == 1)
-    {
+    if (status.pres_flag == 1) {
       // Presence Units: cm^-1
       mySensor.getPresenceValue(&presenceVal);
-      result = presenceVal;
       Serial.print("Presence: ");
       Serial.print(presenceVal);
       Serial.println(" cm^-1");
+      return presenceVal;
     }
   }
 
-  return result;
+  return 0;
 }
 
 void loopAirQuality(){
