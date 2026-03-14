@@ -4,6 +4,11 @@
 #include <Arduino.h>
 
 /*
+ * Hardware Selection
+ */
+#define IS_AIR_SENSOR_PRESENT false
+
+/*
  * WiFi
  */
 
@@ -15,7 +20,9 @@ WiFiMulti wifiMulti;
 #include "network_credentials.h"
 #define AP_SSID  "Kitchen_Lights"
 unsigned long millisWhenWeatherLastFetched = 0;
+#if IS_AIR_SENSOR_PRESENT
 unsigned long millisWhenAirLastReported = 0;
+#endif // IS_AIR_SENSOR_PRESENT
 
 
 /*
@@ -122,6 +129,7 @@ unsigned long millisOfLastPresenceDetection = 0;
 /*
  * Air Quality: Particles, Humidity, Temp, voc, NOx
  */
+#if IS_AIR_SENSOR_PRESENT
 #include <SensirionI2CSen5x.h>
 
 // The used commands use up to 48 bytes. On some Arduino's the default buffer
@@ -140,6 +148,7 @@ SensirionI2CSen5x sen55;
  */
 #include "SparkFun_SCD4x_Arduino_Library.h"
 SCD4x sen41;
+#endif // IS_AIR_SENSOR_PRESENT
 
 
 
@@ -157,8 +166,10 @@ void setup() {
   setupTwist();
   setupPresence();
   setupWiFi();
+#if IS_AIR_SENSOR_PRESENT
   setupCO2Sensor();
   setupParticulateSensor();
+#endif // IS_AIR_SENSOR_PRESENT
 }
 
 void setupLEDs() {
@@ -214,6 +225,8 @@ void setupWiFi() {
   millisWhenWeatherLastFetched = millis();
 }
 
+#if IS_AIR_SENSOR_PRESENT
+
 void setupCO2Sensor() {
   //sen41.enableDebugging(); // Uncomment this line to get helpful debug messages on Serial
 
@@ -241,7 +254,7 @@ void setupParticulateSensor() {
 #ifdef USE_PRODUCT_INFO
     printSerialNumber();
     printModuleVersions();
-#endif
+#endif // USE_PRODUCT_INFO
 
     // set a temperature offset in degrees celsius
     // Note: supported by SEN54 and SEN55 sensors
@@ -346,6 +359,7 @@ void printModuleVersions() {
     }
 }
 
+#endif // IS_AIR_SENSOR_PRESENT
 
 /*****************************************************************************
  *                                                                           *
@@ -355,11 +369,14 @@ void printModuleVersions() {
 
 void loop()
 {
+
+#if IS_AIR_SENSOR_PRESENT
   unsigned long millisSinceAirReport = millis() - millisWhenAirLastReported;
   if (millisSinceAirReport > 120500) {
     reportAirQuality();
     millisWhenAirLastReported = millis();
   }
+#endif // IS_AIR_SENSOR_PRESENT
 
   unsigned long millisSinceWeatherFetch = millis() - millisWhenWeatherLastFetched;
   if (millisSinceWeatherFetch > 30000) {
@@ -662,6 +679,8 @@ void parseWeatherReport(String raw) {
  *                                                                           *
  ****************************************************************************/
 
+#if IS_AIR_SENSOR_PRESENT
+
 void reportAirQuality() {
 
   // some floats to store read values in
@@ -752,3 +771,5 @@ void sendAirReport(String airUrl) {
     http.end();
   }
 }
+
+#endif // IS_AIR_SENSOR_PRESENT
