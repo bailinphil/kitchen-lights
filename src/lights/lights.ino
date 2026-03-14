@@ -7,6 +7,7 @@
  * Hardware Selection
  */
 #define IS_AIR_SENSOR_PRESENT false
+#define IS_TWIST_PRESENT false
 
 /*
  * WiFi
@@ -39,39 +40,12 @@ CRGB leds[NUM_LEDS];
 CRGB color = CRGB::Red;
 #define BRIGHTNESS  20
 
-int latestSwitchPosition = -1;
-int earlierSwitchPosition = -1;
 
 /*
- * Twist
+ * Mode Switching
  */
-// The Twist is used to allow user to control some details of the
-// current lighting mode.
-#include "SparkFun_Qwiic_Twist_Arduino_Library.h"
-TWIST twist;
-
-// Wire.h is used to write to the 16x2 display which gives the user
-// information about what's going on with the lights, as well as
-// information about air quality in the room.
-#include <Wire.h>
-#define DISPLAY_ADDRESS1 0x72 //This is the default address of the OpenLCD
-
-#define twistBrightnessWindowSize 20
-int twistBrightnessWindowCenter = 0;
-int twistBrightnessWindowMin = - (twistBrightnessWindowSize / 2);
-int twistBrightnessWindowMax = (twistBrightnessWindowSize / 2);
-
-// this buffer is used to create helpful debugging messages to send
-// over the serial interface.
-String previousMessageTop = "";
-String messageTop = "";
-String messageBottom = "";
-String weatherReport[10];
-int currentWeatherReportDisplay = 1;
-int millisWhenBottomRowUpdated = 0;
-#define WEATHER_REPORT_MAX_LENGTH 10
-bool isDisplayDirty = true;
-
+int latestSwitchPosition = -1;
+int earlierSwitchPosition = -1;
 String modeName[] = {
   "Standby",
   "Routine",
@@ -83,19 +57,6 @@ String modeName[] = {
   "Racetrack",
   "Twinkle",
   "Away",
-};
-
-uint8_t twist_colors[][3] = {
-  {  0,   0,   0},  // Standby
-  {100, 100,   0},  // Routine
-  {150, 150, 150},  // Cook Day
-  {150, 100,  50},  // Cook Night
-  {100,  30,   0},  // Dishes
-  { 40,   2,   0},  // Night
-  {255,   0,   0},  // Sparkles
-  {  0, 255,   0},  // Racetrack
-  {  0,   0, 255},  // Twinkle
-  {  0,  40,  40},  // Away
 };
 
 CRGB modeColor[] = {
@@ -111,6 +72,55 @@ CRGB modeColor[] = {
   CRGB::DimGray,     // Away
   CRGB::Black,
 };
+
+/*
+ * Twist
+ */
+#if IS_TWIST_PRESENT
+
+// The Twist is used to allow user to control some details of the
+// current lighting mode.
+#include "SparkFun_Qwiic_Twist_Arduino_Library.h"
+TWIST twist;
+
+#define twistBrightnessWindowSize 20
+int twistBrightnessWindowCenter = 0;
+int twistBrightnessWindowMin = - (twistBrightnessWindowSize / 2);
+int twistBrightnessWindowMax = (twistBrightnessWindowSize / 2);
+
+uint8_t twist_colors[][3] = {
+  {  0,   0,   0},  // Standby
+  {100, 100,   0},  // Routine
+  {150, 150, 150},  // Cook Day
+  {150, 100,  50},  // Cook Night
+  {100,  30,   0},  // Dishes
+  { 40,   2,   0},  // Night
+  {255,   0,   0},  // Sparkles
+  {  0, 255,   0},  // Racetrack
+  {  0,   0, 255},  // Twinkle
+  {  0,  40,  40},  // Away
+};
+#endif
+
+
+// Wire.h is used to write to the 16x2 display which gives the user
+// information about what's going on with the lights, as well as
+// information about air quality in the room.
+#include <Wire.h>
+#define DISPLAY_ADDRESS1 0x72 //This is the default address of the OpenLCD
+
+
+// this buffer is used to create helpful debugging messages to send
+// over the serial interface.
+String previousMessageTop = "";
+String messageTop = "";
+String messageBottom = "";
+String weatherReport[10];
+int currentWeatherReportDisplay = 1;
+int millisWhenBottomRowUpdated = 0;
+#define WEATHER_REPORT_MAX_LENGTH 10
+bool isDisplayDirty = true;
+
 
 /*
  * Presence
@@ -163,7 +173,9 @@ void setup() {
   Serial.begin(115200); // communication speed for debug messages
   setupLEDs();
   setupDisplay();
+#if IS_TWIST_PRESENT  
   setupTwist();
+#endif
   setupPresence();
   setupWiFi();
 #if IS_AIR_SENSOR_PRESENT
@@ -197,6 +209,7 @@ void setupDisplay() {
   }
 }
 
+#if IS_TWIST_PRESENT
 void setupTwist() {
   if (twist.begin() == false)
   {
@@ -209,6 +222,7 @@ void setupTwist() {
   twistBrightnessWindowMax = twistBrightnessWindowCenter + (twistBrightnessWindowSize / 2);
   twist.setColor(100,10,0);
 }
+#endif
 
 // https://github.com/sparkfun/SparkFun_STHS34PF80_Arduino_Library
 void setupPresence() {
@@ -383,11 +397,13 @@ void loop()
     fetchWeatherReport();
   }
 
+#if IS_TWIST_PRESENT
   if (twist.isPressed()) {
     twistBrightnessWindowCenter = twist.getCount();
     twistBrightnessWindowMin = twist.getCount() - twistBrightnessWindowSize;
     twistBrightnessWindowMax = twist.getCount() + twistBrightnessWindowSize;
   }
+#endif
 
   int currentSwitchPosition = getSwitchPosition();
   // sometimes the analog readings of the switch "flicker" out of range for a moment.
@@ -416,6 +432,8 @@ void loop()
     millisOfLastPresenceDetection = millis();
   }
 
+
+#if IS_TWIST_PRESENT
   int currentTwistPosition = twist.getCount();
   clampTwistWindow(currentTwistPosition);
   float twistedPositionInWindow = (currentTwistPosition - twistBrightnessWindowMin) / (1.0 * twistBrightnessWindowSize);
@@ -429,6 +447,7 @@ void loop()
   FastLED.setBrightness(requestedBrightness);
   uint8_t* tc = twist_colors[currentSwitchPosition];
   twist.setColor(tc[0],tc[1],tc[2]);
+#endif
 
   messageTop = prepareTopMessage(nextSwitchPosition);
   messageBottom = prepareBottomMessage();
@@ -552,6 +571,9 @@ int getSwitchPosition() {
   return val;
 }
 
+
+
+#if IS_TWIST_PRESENT
 // Clamp the twist brightness window so the current position stays inside it.
 void clampTwistWindow(int currentTwistPosition) {
   if (currentTwistPosition < twistBrightnessWindowMin) {
@@ -563,7 +585,7 @@ void clampTwistWindow(int currentTwistPosition) {
     twistBrightnessWindowMax = currentTwistPosition;
   }
 }
-
+#endif
 
 /*****************************************************************************
  *                                                                           *
