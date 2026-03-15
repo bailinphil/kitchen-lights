@@ -208,9 +208,11 @@ void setupLEDs() {
   delay( 3000 ); // power-up safety delay
   // It's important to set the color correction for your LED strip here,
   // so that colors can be more accurately rendered through the 'temperature' profiles
-  FastLED.addLeds<CHIPSET, 3, COLOR_ORDER>(leds, NUM_LEDS);
-  FastLED.addLeds<CHIPSET, 1, COLOR_ORDER>(leds, NUM_LEDS);
-  FastLED.addLeds<CHIPSET, 4, COLOR_ORDER>(leds, NUM_LEDS);
+  // Use pins 25, 17, and 16 because they're adjacent to one another on my board, and
+  // Pins 1 and 3 are the default Serial TX and RX pins. This was stomping on debugging.
+  FastLED.addLeds<CHIPSET, 25, COLOR_ORDER>(leds, NUM_LEDS);
+  FastLED.addLeds<CHIPSET, 17, COLOR_ORDER>(leds, NUM_LEDS);
+  FastLED.addLeds<CHIPSET, 16, COLOR_ORDER>(leds, NUM_LEDS);
   FastLED.setBrightness( BRIGHTNESS );
   previousBrightness = BRIGHTNESS;
 }
@@ -407,15 +409,24 @@ void printModuleVersions() {
 
 #endif // IS_AIR_SENSOR_ENABLED
 
+
+
+
+
 /*****************************************************************************
  *                                                                           *
- * LOOP                                                                      *
+ *                                                                           *
+ *                                                                           *
+ *                                                                           *
+ * MAIN LOOP                                                                 *
+ *                                                                           *
+ *                                                                           *
+ *                                                                           *
  *                                                                           *
  ****************************************************************************/
 
 void loop()
 {
-Serial.println(".");
 #if IS_AIR_SENSOR_ENABLED
   unsigned long millisSinceAirReport = millis() - millisWhenAirLastReported;
   if (millisSinceAirReport > 120500) {
@@ -458,7 +469,9 @@ Serial.println(".");
   if (currentSwitchPosition != earlierSwitchPosition && latestSwitchPosition == currentSwitchPosition) {
     nextSwitchPosition = currentSwitchPosition;
   }
-  isLedDirty = isLedDirty && (nextSwitchPosition != currentSwitchPosition);
+  if (nextSwitchPosition != currentSwitchPosition) {
+    isLedDirty = true;
+  }
   earlierSwitchPosition = latestSwitchPosition;
   latestSwitchPosition = currentSwitchPosition;
 
@@ -695,12 +708,13 @@ int applyNightFade(int brightness) {
 #if IS_WIFI_ENABLED
 void fetchWeatherReport() {
   // wait for WiFi connection
-  Serial.println("about to ask for wifi");
+  Serial.println("about to try to use wifi");
   if ((wifiMulti.run() == WL_CONNECTED)) {
 
 
     HTTPClient http;
     http.begin(WEATHER_URL);
+    Serial.print("Requesting ");
     Serial.println(WEATHER_URL);
     // start connection and send HTTP header
     int httpCode = http.GET();
@@ -712,7 +726,6 @@ void fetchWeatherReport() {
       if (httpCode == HTTP_CODE_OK) {
         String payload = http.getString();
         parseWeatherReport(payload);
-        //Serial.println(payload);
         millisWhenWeatherLastFetched = millis();
       }
     } else {
@@ -724,8 +737,6 @@ void fetchWeatherReport() {
 }
 
 void parseWeatherReport(String raw) {
-  Serial.print("parsing ");
-  Serial.println(raw);
   for (int i = 0; i < WEATHER_REPORT_MAX_LENGTH; ++i) {
     weatherReport[i] = "";
   }
