@@ -7,11 +7,11 @@
  * Hardware Selection
  */
 #define IS_AIR_SENSOR_ENABLED false
-#define IS_TWIST_ENABLED false
-#define IS_PRESENCE_ENABLED false
-#define IS_WIFI_ENABLED false
-#define IS_DISPLAY_ENABLED false
-#define IS_FASTLED_ENABLED false
+#define IS_TWIST_ENABLED      true
+#define IS_PRESENCE_ENABLED   false
+#define IS_WIFI_ENABLED       true
+#define IS_DISPLAY_ENABLED    true
+#define IS_FASTLED_ENABLED    true
 
 /*
  * WiFi
@@ -23,9 +23,9 @@
 #define USE_SERIAL Serial
 WiFiMulti wifiMulti;
 #include "network_credentials.h"
-#define AP_SSID  "Kitchen_Lights"
 unsigned long millisWhenWeatherLastFetched = 0;
 #endif // IS_WIFI_ENABLED
+
 #if IS_AIR_SENSOR_ENABLED
 unsigned long millisWhenAirLastReported = 0;
 #endif // IS_AIR_SENSOR_ENABLED
@@ -42,6 +42,10 @@ unsigned long millisWhenAirLastReported = 0;
 #define CHIPSET     WS2811
 #define COLOR_ORDER BRG
 CRGB leds[NUM_LEDS];
+
+CRGB previousColor;
+int previousBrightness;
+bool isLedDirty = true;
 #define BRIGHTNESS  20
 #endif //IS_FASTLED_ENABLED
 
@@ -177,8 +181,7 @@ SCD4x sen41;
  ****************************************************************************/
 
 void setup() {
-  Serial.begin(9600); // communication speed for debug messages
-  Serial.println("hi");
+  Serial.begin(115200); // communication speed for debug messages
 #if IS_FASTLED_ENABLED
   setupLEDs();
 #endif
@@ -209,6 +212,7 @@ void setupLEDs() {
   FastLED.addLeds<CHIPSET, 1, COLOR_ORDER>(leds, NUM_LEDS);
   FastLED.addLeds<CHIPSET, 4, COLOR_ORDER>(leds, NUM_LEDS);
   FastLED.setBrightness( BRIGHTNESS );
+  previousBrightness = BRIGHTNESS;
 }
 #endif // IS_FASTLED_ENABLED
 
@@ -258,8 +262,13 @@ void setupPresence() {
 
 #if IS_WIFI_ENABLED
 void setupWiFi() {
-  wifiMulti.addAP(STA_SSID, STA_PASS);
+  Serial.print("try to connect to ");
+  wifiMulti.addAP(STA_SSID_HOME, STA_PASS_HOME);
+  wifiMulti.addAP(STA_SSID_WORK, STA_PASS_WORK);
+  wifiMulti.addAP(STA_SSID_PHONE, STA_PASS_PHONE);
+  wifiMulti.addAP(STA_SSID_PROTO, STA_PASS_PROTO);
   millisWhenWeatherLastFetched = millis();
+  Serial.println("done!");
 }
 #endif // IS_WIFI_ENABLED
 
@@ -406,7 +415,7 @@ void printModuleVersions() {
 
 void loop()
 {
-
+Serial.println(".");
 #if IS_AIR_SENSOR_ENABLED
   unsigned long millisSinceAirReport = millis() - millisWhenAirLastReported;
   if (millisSinceAirReport > 120500) {
@@ -449,6 +458,7 @@ void loop()
   if (currentSwitchPosition != earlierSwitchPosition && latestSwitchPosition == currentSwitchPosition) {
     nextSwitchPosition = currentSwitchPosition;
   }
+  isLedDirty = isLedDirty && (nextSwitchPosition != currentSwitchPosition);
   earlierSwitchPosition = latestSwitchPosition;
   latestSwitchPosition = currentSwitchPosition;
 
@@ -473,7 +483,10 @@ void loop()
 #endif // IS_PRESENCE_ENABLED
 
 #if IS_FASTLED_ENABLED
-  FastLED.setBrightness(requestedBrightness);
+  if(requestedBrightness != previousBrightness){
+    FastLED.setBrightness(requestedBrightness);
+    isLedDirty = true;
+  }
 #endif // IS_FASTLED_ENABLED
   uint8_t* tc = twist_colors[currentSwitchPosition];
   twist.setColor(tc[0],tc[1],tc[2]);
@@ -488,11 +501,17 @@ void loop()
 #endif // IS_DISPLAY_ENABLED
 
 #if IS_FASTLED_ENABLED
-  setAllLEDs(modeColor[nextSwitchPosition]);
-  FastLED.show();
+  if(isLedDirty){
+#if IS_TWIST_ENABLED
+    previousBrightness = requestedBrightness;
+#endif // IS_TWIST_ENABLED
+    setAllLEDs(modeColor[nextSwitchPosition]);
+    FastLED.show();
+    isLedDirty = false;
+  }
 #endif // IS_FASTLED_ENABLED
 
-  delay(2);
+  delay(5);
 }
 
 
@@ -676,7 +695,9 @@ int applyNightFade(int brightness) {
 #if IS_WIFI_ENABLED
 void fetchWeatherReport() {
   // wait for WiFi connection
+  Serial.println("about to ask for wifi");
   if ((wifiMulti.run() == WL_CONNECTED)) {
+
 
     HTTPClient http;
     http.begin(WEATHER_URL);
@@ -691,7 +712,7 @@ void fetchWeatherReport() {
       if (httpCode == HTTP_CODE_OK) {
         String payload = http.getString();
         parseWeatherReport(payload);
-        Serial.println(payload);
+        //Serial.println(payload);
         millisWhenWeatherLastFetched = millis();
       }
     } else {
@@ -703,6 +724,8 @@ void fetchWeatherReport() {
 }
 
 void parseWeatherReport(String raw) {
+  Serial.print("parsing ");
+  Serial.println(raw);
   for (int i = 0; i < WEATHER_REPORT_MAX_LENGTH; ++i) {
     weatherReport[i] = "";
   }
@@ -738,8 +761,7 @@ void parseWeatherReport(String raw) {
  *                                                                           *
  ****************************************************************************/
 
-#if IS_AIR_SENSOR_ENABLED
-#if IS_WIFI_ENABLED
+#if IS_AIR_SENSOR_ENABLED && IS_WIFI_ENABLED
 void reportAirQuality() {
 
   // some floats to store read values in
@@ -830,5 +852,4 @@ void sendAirReport(String airUrl) {
     http.end();
   }
 }
-#endif // IS_WIFI_ENABLED
-#endif // IS_AIR_SENSOR_ENABLED
+#endif // IS_AIR_SENSOR_ENABLED && IS_WIFI_ENABLED
