@@ -10,6 +10,7 @@
 #define IS_TWIST_ENABLED false
 #define IS_PRESENCE_ENABLED false
 #define IS_WIFI_ENABLED false
+#define IS_DISPLAY_ENABLED false
 
 /*
  * WiFi
@@ -107,6 +108,7 @@ uint8_t twist_colors[][3] = {
 #endif
 
 
+#if IS_DISPLAY_ENABLED
 // Wire.h is used to write to the 16x2 display which gives the user
 // information about what's going on with the lights, as well as
 // information about air quality in the room.
@@ -124,7 +126,7 @@ int currentWeatherReportDisplay = 1;
 int millisWhenBottomRowUpdated = 0;
 #define WEATHER_REPORT_MAX_LENGTH 10
 bool isDisplayDirty = true;
-
+#endif // IS_DISPLAY_ENABLED
 
 /*
  * Presence
@@ -178,7 +180,9 @@ SCD4x sen41;
 void setup() {
   Serial.begin(115200); // communication speed for debug messages
   setupLEDs();
+#if IS_DISPLAY_ENABLED
   setupDisplay();
+#endif
 #if IS_TWIST_ENABLED  
   setupTwist();
 #endif
@@ -204,6 +208,7 @@ void setupLEDs() {
   FastLED.setBrightness( BRIGHTNESS );
 }
 
+#if IS_DISPLAY_ENABLED
 void setupDisplay() {
   Wire.begin(); //Join the bus as master
   //Send the reset command to the display - this forces the cursor to return to the beginning of the display
@@ -218,6 +223,7 @@ void setupDisplay() {
     weatherReport[i] = "";
   }
 }
+#endif // IS_DISPLAY_ENABLED
 
 #if IS_TWIST_ENABLED
 void setupTwist() {
@@ -467,11 +473,13 @@ void loop()
   twist.setColor(tc[0],tc[1],tc[2]);
 #endif // IS_TWIST_ENABLED
 
+#if IS_DISPLAY_ENABLED
   messageTop = prepareTopMessage(nextSwitchPosition);
   messageBottom = prepareBottomMessage();
   if (isDisplayDirty) {
     updateDisplay(messageTop, messageBottom);
   }
+#endif // IS_DISPLAY_ENABLED
 
   setAllLEDs(modeColor[nextSwitchPosition]);
   FastLED.show();
@@ -485,7 +493,7 @@ void loop()
  * DISPLAY                                                                   *
  *                                                                           *
  ****************************************************************************/
-
+#if IS_DISPLAY_ENABLED
 String prepareTopMessage(uint8_t switchPos) {
   String result = weatherReport[0] + " " + modeName[switchPos];
   if (!result.equals(previousMessageTop)) {
@@ -529,7 +537,7 @@ void updateDisplay(String messageTop, String messageBottom) {
   isDisplayDirty = false;
   Serial.println("--------------");
 }
-
+#endif //IS_DISPLAY_ENABLED
 
 /*****************************************************************************
  *                                                                           *
