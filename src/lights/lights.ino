@@ -7,7 +7,7 @@
  * Hardware Selection
  */
 #define IS_AIR_SENSOR_PRESENT false
-#define IS_TWIST_PRESENT false
+#define IS_TWIST_PRESENT true
 
 /*
  * WiFi
@@ -44,6 +44,7 @@ CRGB color = CRGB::Red;
 /*
  * Mode Switching
  */
+#define MODE_SWITCH_PIN A5
 int latestSwitchPosition = -1;
 int earlierSwitchPosition = -1;
 String modeName[] = {
@@ -533,7 +534,7 @@ void setAllLEDs(CRGB color) {
  ****************************************************************************/
 
 int getSwitchPosition() {
-  uint16_t input = analogRead(A0);
+  uint16_t input = analogRead(MODE_SWITCH_PIN);
   uint8_t val;
 
   if (input < 100) {
