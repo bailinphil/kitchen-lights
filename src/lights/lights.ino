@@ -7,7 +7,7 @@
  * Hardware Selection
  */
 #define IS_AIR_SENSOR_ENABLED false
-#define IS_TWIST_ENABLED false
+#define IS_TWIST_ENABLED true
 #define IS_PRESENCE_ENABLED false
 #define IS_WIFI_ENABLED false
 #define IS_DISPLAY_ENABLED false
@@ -178,7 +178,8 @@ SCD4x sen41;
  ****************************************************************************/
 
 void setup() {
-  Serial.begin(115200); // communication speed for debug messages
+  Serial.begin(9600); // communication speed for debug messages
+  Serial.println("hi");
   setupLEDs();
 #if IS_DISPLAY_ENABLED
   setupDisplay();
