@@ -7,13 +7,14 @@
  * Hardware Selection
  */
 #define IS_AIR_SENSOR_ENABLED false
-#define IS_TWIST_ENABLED true
+#define IS_TWIST_ENABLED false
 #define IS_PRESENCE_ENABLED false
+#define IS_WIFI_ENABLED false
 
 /*
  * WiFi
  */
-
+#if IS_WIFI_ENABLED
 #include <WiFi.h>
 #include <WiFiMulti.h>
 #include <HTTPClient.h>
@@ -22,6 +23,7 @@ WiFiMulti wifiMulti;
 #include "network_credentials.h"
 #define AP_SSID  "Kitchen_Lights"
 unsigned long millisWhenWeatherLastFetched = 0;
+#endif // IS_WIFI_ENABLED
 #if IS_AIR_SENSOR_ENABLED
 unsigned long millisWhenAirLastReported = 0;
 #endif // IS_AIR_SENSOR_ENABLED
@@ -183,7 +185,9 @@ void setup() {
 #if IS_PRESENCE_ENABLED
   setupPresence();
 #endif
+#if IS_WIFI_ENABLED
   setupWiFi();
+#endif
 #if IS_AIR_SENSOR_ENABLED
   setupCO2Sensor();
   setupParticulateSensor();
@@ -242,10 +246,12 @@ void setupPresence() {
 }
 #endif
 
+#if IS_WIFI_ENABLED
 void setupWiFi() {
   wifiMulti.addAP(STA_SSID, STA_PASS);
   millisWhenWeatherLastFetched = millis();
 }
+#endif // IS_WIFI_ENABLED
 
 #if IS_AIR_SENSOR_ENABLED
 void setupCO2Sensor() {
@@ -399,10 +405,12 @@ void loop()
   }
 #endif // IS_AIR_SENSOR_ENABLED
 
+#if IS_WIFI_ENABLED
   unsigned long millisSinceWeatherFetch = millis() - millisWhenWeatherLastFetched;
   if (millisSinceWeatherFetch > 30000) {
     fetchWeatherReport();
   }
+#endif // IS_WIFI_ENABLED 
 
 #if IS_TWIST_ENABLED
   if (twist.isPressed()) {
@@ -647,7 +655,7 @@ int applyNightFade(int brightness) {
  * WEATHER                                                                   *
  *                                                                           *
  ****************************************************************************/
-
+#if IS_WIFI_ENABLED
 void fetchWeatherReport() {
   // wait for WiFi connection
   if ((wifiMulti.run() == WL_CONNECTED)) {
@@ -704,7 +712,7 @@ void parseWeatherReport(String raw) {
     }
   }
 }
-
+#endif // IS_WIFI_ENABLED
 
 /*****************************************************************************
  *                                                                           *
@@ -713,7 +721,7 @@ void parseWeatherReport(String raw) {
  ****************************************************************************/
 
 #if IS_AIR_SENSOR_ENABLED
-
+#if IS_WIFI_ENABLED
 void reportAirQuality() {
 
   // some floats to store read values in
@@ -804,5 +812,5 @@ void sendAirReport(String airUrl) {
     http.end();
   }
 }
-
+#endif // IS_WIFI_ENABLED
 #endif // IS_AIR_SENSOR_ENABLED
