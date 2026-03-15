@@ -7,10 +7,11 @@
  * Hardware Selection
  */
 #define IS_AIR_SENSOR_ENABLED false
-#define IS_TWIST_ENABLED true
+#define IS_TWIST_ENABLED false
 #define IS_PRESENCE_ENABLED false
 #define IS_WIFI_ENABLED false
 #define IS_DISPLAY_ENABLED false
+#define IS_FASTLED_ENABLED false
 
 /*
  * WiFi
@@ -33,7 +34,7 @@ unsigned long millisWhenAirLastReported = 0;
 /*
  * LED Strip
  */
-// Display the lights.
+#if IS_FASTLED_ENABLED
 #include <FastLED.h>
 
 // Information about the LED strip itself
@@ -41,9 +42,8 @@ unsigned long millisWhenAirLastReported = 0;
 #define CHIPSET     WS2811
 #define COLOR_ORDER BRG
 CRGB leds[NUM_LEDS];
-CRGB color = CRGB::Red;
 #define BRIGHTNESS  20
-
+#endif //IS_FASTLED_ENABLED
 
 /*
  * Mode Switching
@@ -64,6 +64,7 @@ String modeName[] = {
   "Away",
 };
 
+#if IS_FASTLED_ENABLED
 CRGB modeColor[] = {
   CRGB::Black,       // Standby
   CRGB::White,       // Routine
@@ -77,6 +78,7 @@ CRGB modeColor[] = {
   CRGB::DimGray,     // Away
   CRGB::Black,
 };
+#endif
 
 /*
  * Twist
@@ -114,8 +116,6 @@ uint8_t twist_colors[][3] = {
 // information about air quality in the room.
 #include <Wire.h>
 #define DISPLAY_ADDRESS1 0x72 //This is the default address of the OpenLCD
-
-
 // this buffer is used to create helpful debugging messages to send
 // over the serial interface.
 String previousMessageTop = "";
@@ -149,7 +149,6 @@ unsigned long millisOfLastPresenceDetection = 0;
  */
 #if IS_AIR_SENSOR_ENABLED
 #include <SensirionI2CSen5x.h>
-
 // The used commands use up to 48 bytes. On some Arduino's the default buffer
 // space is not large enough
 #define MAXBUF_REQUIREMENT 48
@@ -180,11 +179,13 @@ SCD4x sen41;
 void setup() {
   Serial.begin(9600); // communication speed for debug messages
   Serial.println("hi");
+#if IS_FASTLED_ENABLED
   setupLEDs();
+#endif
 #if IS_DISPLAY_ENABLED
   setupDisplay();
 #endif
-#if IS_TWIST_ENABLED  
+#if IS_TWIST_ENABLED
   setupTwist();
 #endif
 #if IS_PRESENCE_ENABLED
@@ -199,6 +200,7 @@ void setup() {
 #endif // IS_AIR_SENSOR_ENABLED
 }
 
+#if IS_FASTLED_ENABLED
 void setupLEDs() {
   delay( 3000 ); // power-up safety delay
   // It's important to set the color correction for your LED strip here,
@@ -208,6 +210,7 @@ void setupLEDs() {
   FastLED.addLeds<CHIPSET, 4, COLOR_ORDER>(leds, NUM_LEDS);
   FastLED.setBrightness( BRIGHTNESS );
 }
+#endif // IS_FASTLED_ENABLED
 
 #if IS_DISPLAY_ENABLED
 void setupDisplay() {
@@ -417,7 +420,7 @@ void loop()
   if (millisSinceWeatherFetch > 30000) {
     fetchWeatherReport();
   }
-#endif // IS_WIFI_ENABLED 
+#endif // IS_WIFI_ENABLED
 
 #if IS_TWIST_ENABLED
   if (twist.isPressed()) {
@@ -469,7 +472,9 @@ void loop()
   }
 #endif // IS_PRESENCE_ENABLED
 
+#if IS_FASTLED_ENABLED
   FastLED.setBrightness(requestedBrightness);
+#endif // IS_FASTLED_ENABLED
   uint8_t* tc = twist_colors[currentSwitchPosition];
   twist.setColor(tc[0],tc[1],tc[2]);
 #endif // IS_TWIST_ENABLED
@@ -482,8 +487,10 @@ void loop()
   }
 #endif // IS_DISPLAY_ENABLED
 
+#if IS_FASTLED_ENABLED
   setAllLEDs(modeColor[nextSwitchPosition]);
   FastLED.show();
+#endif // IS_FASTLED_ENABLED
 
   delay(2);
 }
@@ -546,11 +553,13 @@ void updateDisplay(String messageTop, String messageBottom) {
  *                                                                           *
  ****************************************************************************/
 
+#if IS_FASTLED_ENABLED
 void setAllLEDs(CRGB color) {
   for (int i = 0; i < NUM_LEDS; i++) {
     leds[i] = color;
   }
 }
+#endif
 
 
 /*****************************************************************************
@@ -565,34 +574,34 @@ int getSwitchPosition() {
 
   if (input < 100) {
     // position 0 always reads 0
-    val = 0; color = CRGB::Black;
+    val = 0;
   } else if (input < 400) {
     // position 1 is about 270
-    val = 1; color = CRGB::White;
+    val = 1;
   } else if (input < 900) {
     // position 2 is about 710
-    val = 2; color = CRGB::Red;
+    val = 2;
   } else if (input < 1300) {
     // position 3 is about 1150
-    val = 3; color = CRGB::Green;
+    val = 3;
   } else if (input < 1800) {
     // position 4 is about 1610
-    val = 4; color = CRGB::Blue;
+    val = 4;
   } else if (input < 2300) {
     // position 5 is about 2050
-    val = 5; color = CRGB::Red;
+    val = 5;
   } else if (input < 2700) {
     // position 6 is about 2500
-    val = 6; color = CRGB::Yellow;
+    val = 6;
   } else if (input < 3200) {
     // position 7 is about 2950
-    val = 7; color = CRGB::White;
+    val = 7;
   } else if (input < 3900) {
     // position 8 is about 3650
-    val = 8; color = CRGB::White;
+    val = 8;
   } else {
     // position 9 is always 4095
-    val = 9; color = CRGB::Black;
+    val = 9;
   }
 
   return val;
