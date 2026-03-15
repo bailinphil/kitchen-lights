@@ -6,9 +6,9 @@
 /*
  * Hardware Selection
  */
-#define IS_AIR_SENSOR_PRESENT false
-#define IS_TWIST_PRESENT true
-#define IS_PRESENCE_PRESENT false
+#define IS_AIR_SENSOR_ENABLED false
+#define IS_TWIST_ENABLED true
+#define IS_PRESENCE_ENABLED false
 
 /*
  * WiFi
@@ -22,9 +22,9 @@ WiFiMulti wifiMulti;
 #include "network_credentials.h"
 #define AP_SSID  "Kitchen_Lights"
 unsigned long millisWhenWeatherLastFetched = 0;
-#if IS_AIR_SENSOR_PRESENT
+#if IS_AIR_SENSOR_ENABLED
 unsigned long millisWhenAirLastReported = 0;
-#endif // IS_AIR_SENSOR_PRESENT
+#endif // IS_AIR_SENSOR_ENABLED
 
 
 /*
@@ -78,7 +78,7 @@ CRGB modeColor[] = {
 /*
  * Twist
  */
-#if IS_TWIST_PRESENT
+#if IS_TWIST_ENABLED
 
 // The Twist is used to allow user to control some details of the
 // current lighting mode.
@@ -127,7 +127,7 @@ bool isDisplayDirty = true;
 /*
  * Presence
  */
-#if IS_PRESENCE_PRESENT
+#if IS_PRESENCE_ENABLED
 #include "SparkFun_STHS34PF80_Arduino_Library.h"
 STHS34PF80_I2C mySensor;
 
@@ -138,12 +138,12 @@ float temperatureVal = 0;
 unsigned long millisOfLastPresenceDetection = 0;
 #define millisTimeoutAtNight 20000
 #define millisFadeDuration 3000
-#endif // IS_PRESENCE_PRESENT
+#endif // IS_PRESENCE_ENABLED
 
 /*
  * Air Quality: Particles, Humidity, Temp, voc, NOx
  */
-#if IS_AIR_SENSOR_PRESENT
+#if IS_AIR_SENSOR_ENABLED
 #include <SensirionI2CSen5x.h>
 
 // The used commands use up to 48 bytes. On some Arduino's the default buffer
@@ -162,7 +162,7 @@ SensirionI2CSen5x sen55;
  */
 #include "SparkFun_SCD4x_Arduino_Library.h"
 SCD4x sen41;
-#endif // IS_AIR_SENSOR_PRESENT
+#endif // IS_AIR_SENSOR_ENABLED
 
 
 
@@ -177,17 +177,17 @@ void setup() {
   Serial.begin(115200); // communication speed for debug messages
   setupLEDs();
   setupDisplay();
-#if IS_TWIST_PRESENT  
+#if IS_TWIST_ENABLED  
   setupTwist();
 #endif
-#if IS_PRESENCE_PRESENT
+#if IS_PRESENCE_ENABLED
   setupPresence();
 #endif
   setupWiFi();
-#if IS_AIR_SENSOR_PRESENT
+#if IS_AIR_SENSOR_ENABLED
   setupCO2Sensor();
   setupParticulateSensor();
-#endif // IS_AIR_SENSOR_PRESENT
+#endif // IS_AIR_SENSOR_ENABLED
 }
 
 void setupLEDs() {
@@ -215,7 +215,7 @@ void setupDisplay() {
   }
 }
 
-#if IS_TWIST_PRESENT
+#if IS_TWIST_ENABLED
 void setupTwist() {
   if (twist.begin() == false)
   {
@@ -230,7 +230,7 @@ void setupTwist() {
 }
 #endif
 
-#if IS_PRESENCE_PRESENT
+#if IS_PRESENCE_ENABLED
 // https://github.com/sparkfun/SparkFun_STHS34PF80_Arduino_Library
 void setupPresence() {
     // Establish communication with device
@@ -247,7 +247,7 @@ void setupWiFi() {
   millisWhenWeatherLastFetched = millis();
 }
 
-#if IS_AIR_SENSOR_PRESENT
+#if IS_AIR_SENSOR_ENABLED
 void setupCO2Sensor() {
   //sen41.enableDebugging(); // Uncomment this line to get helpful debug messages on Serial
 
@@ -380,7 +380,7 @@ void printModuleVersions() {
     }
 }
 
-#endif // IS_AIR_SENSOR_PRESENT
+#endif // IS_AIR_SENSOR_ENABLED
 
 /*****************************************************************************
  *                                                                           *
@@ -391,20 +391,20 @@ void printModuleVersions() {
 void loop()
 {
 
-#if IS_AIR_SENSOR_PRESENT
+#if IS_AIR_SENSOR_ENABLED
   unsigned long millisSinceAirReport = millis() - millisWhenAirLastReported;
   if (millisSinceAirReport > 120500) {
     reportAirQuality();
     millisWhenAirLastReported = millis();
   }
-#endif // IS_AIR_SENSOR_PRESENT
+#endif // IS_AIR_SENSOR_ENABLED
 
   unsigned long millisSinceWeatherFetch = millis() - millisWhenWeatherLastFetched;
   if (millisSinceWeatherFetch > 30000) {
     fetchWeatherReport();
   }
 
-#if IS_TWIST_PRESENT
+#if IS_TWIST_ENABLED
   if (twist.isPressed()) {
     twistBrightnessWindowCenter = twist.getCount();
     twistBrightnessWindowMin = twist.getCount() - twistBrightnessWindowSize;
@@ -434,30 +434,30 @@ void loop()
   earlierSwitchPosition = latestSwitchPosition;
   latestSwitchPosition = currentSwitchPosition;
 
-#if IS_PRESENCE_PRESENT
+#if IS_PRESENCE_ENABLED
   int detectedPresence = checkPresence();
   if (detectedPresence != 0) {
     millisOfLastPresenceDetection = millis();
   }
 #endif
 
-#if IS_TWIST_PRESENT
+#if IS_TWIST_ENABLED
   int currentTwistPosition = twist.getCount();
   clampTwistWindow(currentTwistPosition);
   float twistedPositionInWindow = (currentTwistPosition - twistBrightnessWindowMin) / (1.0 * twistBrightnessWindowSize);
   int requestedBrightness = (int)(255 * twistedPositionInWindow);
 
-#if IS_PRESENCE_PRESENT
+#if IS_PRESENCE_ENABLED
   // In Night mode, turn off the lights when no presence has been detected for a while.
   if (nextSwitchPosition == 5) {
     requestedBrightness = applyNightFade(requestedBrightness);
   }
-#endif // IS_PRESENCE_PRESENT
+#endif // IS_PRESENCE_ENABLED
 
   FastLED.setBrightness(requestedBrightness);
   uint8_t* tc = twist_colors[currentSwitchPosition];
   twist.setColor(tc[0],tc[1],tc[2]);
-#endif // IS_TWIST_PRESENT
+#endif // IS_TWIST_ENABLED
 
   messageTop = prepareTopMessage(nextSwitchPosition);
   messageBottom = prepareBottomMessage();
@@ -583,7 +583,7 @@ int getSwitchPosition() {
 
 
 
-#if IS_TWIST_PRESENT
+#if IS_TWIST_ENABLED
 // Clamp the twist brightness window so the current position stays inside it.
 void clampTwistWindow(int currentTwistPosition) {
   if (currentTwistPosition < twistBrightnessWindowMin) {
@@ -602,7 +602,7 @@ void clampTwistWindow(int currentTwistPosition) {
  * PRESENCE                                                                  *
  *                                                                           *
  ****************************************************************************/
-#if IS_PRESENCE_PRESENT
+#if IS_PRESENCE_ENABLED
 int16_t checkPresence() {
   sths34pf80_tmos_drdy_status_t dataReady;
   mySensor.getDataReady(&dataReady);
@@ -639,7 +639,7 @@ int applyNightFade(int brightness) {
   }
   return 0;
 }
-#endif // IS_PRESENCE_PRESENT
+#endif // IS_PRESENCE_ENABLED
 
 
 /*****************************************************************************
@@ -712,7 +712,7 @@ void parseWeatherReport(String raw) {
  *                                                                           *
  ****************************************************************************/
 
-#if IS_AIR_SENSOR_PRESENT
+#if IS_AIR_SENSOR_ENABLED
 
 void reportAirQuality() {
 
@@ -805,4 +805,4 @@ void sendAirReport(String airUrl) {
   }
 }
 
-#endif // IS_AIR_SENSOR_PRESENT
+#endif // IS_AIR_SENSOR_ENABLED
