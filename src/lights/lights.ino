@@ -8,6 +8,7 @@
  */
 #define IS_AIR_SENSOR_PRESENT false
 #define IS_TWIST_PRESENT true
+#define IS_PRESENCE_PRESENT false
 
 /*
  * WiFi
@@ -126,6 +127,7 @@ bool isDisplayDirty = true;
 /*
  * Presence
  */
+#if IS_PRESENCE_PRESENT
 #include "SparkFun_STHS34PF80_Arduino_Library.h"
 STHS34PF80_I2C mySensor;
 
@@ -136,6 +138,7 @@ float temperatureVal = 0;
 unsigned long millisOfLastPresenceDetection = 0;
 #define millisTimeoutAtNight 20000
 #define millisFadeDuration 3000
+#endif // IS_PRESENCE_PRESENT
 
 /*
  * Air Quality: Particles, Humidity, Temp, voc, NOx
@@ -177,7 +180,9 @@ void setup() {
 #if IS_TWIST_PRESENT  
   setupTwist();
 #endif
+#if IS_PRESENCE_PRESENT
   setupPresence();
+#endif
   setupWiFi();
 #if IS_AIR_SENSOR_PRESENT
   setupCO2Sensor();
@@ -225,6 +230,7 @@ void setupTwist() {
 }
 #endif
 
+#if IS_PRESENCE_PRESENT
 // https://github.com/sparkfun/SparkFun_STHS34PF80_Arduino_Library
 void setupPresence() {
     // Establish communication with device
@@ -234,6 +240,7 @@ void setupPresence() {
       while(1);
     }
 }
+#endif
 
 void setupWiFi() {
   wifiMulti.addAP(STA_SSID, STA_PASS);
@@ -241,7 +248,6 @@ void setupWiFi() {
 }
 
 #if IS_AIR_SENSOR_PRESENT
-
 void setupCO2Sensor() {
   //sen41.enableDebugging(); // Uncomment this line to get helpful debug messages on Serial
 
@@ -428,11 +434,12 @@ void loop()
   earlierSwitchPosition = latestSwitchPosition;
   latestSwitchPosition = currentSwitchPosition;
 
+#if IS_PRESENCE_PRESENT
   int detectedPresence = checkPresence();
   if (detectedPresence != 0) {
     millisOfLastPresenceDetection = millis();
   }
-
+#endif
 
 #if IS_TWIST_PRESENT
   int currentTwistPosition = twist.getCount();
@@ -440,15 +447,17 @@ void loop()
   float twistedPositionInWindow = (currentTwistPosition - twistBrightnessWindowMin) / (1.0 * twistBrightnessWindowSize);
   int requestedBrightness = (int)(255 * twistedPositionInWindow);
 
+#if IS_PRESENCE_PRESENT
   // In Night mode, turn off the lights when no presence has been detected for a while.
   if (nextSwitchPosition == 5) {
     requestedBrightness = applyNightFade(requestedBrightness);
   }
+#endif // IS_PRESENCE_PRESENT
 
   FastLED.setBrightness(requestedBrightness);
   uint8_t* tc = twist_colors[currentSwitchPosition];
   twist.setColor(tc[0],tc[1],tc[2]);
-#endif
+#endif // IS_TWIST_PRESENT
 
   messageTop = prepareTopMessage(nextSwitchPosition);
   messageBottom = prepareBottomMessage();
@@ -593,7 +602,7 @@ void clampTwistWindow(int currentTwistPosition) {
  * PRESENCE                                                                  *
  *                                                                           *
  ****************************************************************************/
-
+#if IS_PRESENCE_PRESENT
 int16_t checkPresence() {
   sths34pf80_tmos_drdy_status_t dataReady;
   mySensor.getDataReady(&dataReady);
@@ -630,6 +639,7 @@ int applyNightFade(int brightness) {
   }
   return 0;
 }
+#endif // IS_PRESENCE_PRESENT
 
 
 /*****************************************************************************
