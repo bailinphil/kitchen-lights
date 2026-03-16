@@ -127,7 +127,7 @@ String messageTop = "";
 String messageBottom = "";
 String weatherReport[10];
 int currentWeatherReportDisplay = 1;
-int millisWhenBottomRowUpdated = 0;
+unsigned long millisWhenBottomRowUpdated = 0;
 #define WEATHER_REPORT_MAX_LENGTH 10
 bool isDisplayDirty = true;
 #endif // IS_DISPLAY_ENABLED
@@ -264,13 +264,11 @@ void setupPresence() {
 
 #if IS_WIFI_ENABLED
 void setupWiFi() {
-  Serial.print("try to connect to ");
   wifiMulti.addAP(STA_SSID_HOME, STA_PASS_HOME);
   wifiMulti.addAP(STA_SSID_WORK, STA_PASS_WORK);
   wifiMulti.addAP(STA_SSID_PHONE, STA_PASS_PHONE);
   wifiMulti.addAP(STA_SSID_PROTO, STA_PASS_PROTO);
   millisWhenWeatherLastFetched = millis();
-  Serial.println("done!");
 }
 #endif // IS_WIFI_ENABLED
 
@@ -304,25 +302,7 @@ void setupParticulateSensor() {
     printModuleVersions();
 #endif // USE_PRODUCT_INFO
 
-    // set a temperature offset in degrees celsius
-    // Note: supported by SEN54 and SEN55 sensors
-    // By default, the temperature and humidity outputs from the sensor
-    // are compensated for the modules self-heating. If the module is
-    // designed into a device, the temperature compensation might need
-    // to be adapted to incorporate the change in thermal coupling and
-    // self-heating of other device components.
-    //
-    // A guide to achieve optimal performance, including references
-    // to mechanical design-in examples can be found in the app note
-    // "SEN5x – Temperature Compensation Instruction" at www.sensirion.com.
-    // Please refer to those application notes for further information
-    // on the advanced compensation settings used
-    // in `setTemperatureOffsetParameters`, `setWarmStartParameter` and
-    // `setRhtAccelerationMode`.
-    //
-    // Adjust tempOffset to account for additional temperature offsets
-    // exceeding the SEN module's self heating.
-    float tempOffset = 0.0;
+    float tempOffset = 0.0; 
     error = sen55.setTemperatureOffsetSimple(tempOffset);
     if (error) {
         Serial.print("Error trying to execute setTemperatureOffsetSimple(): ");
@@ -544,7 +524,7 @@ String prepareTopMessage(uint8_t switchPos) {
 }
 
 String prepareBottomMessage() {
-  if (currentWeatherReportDisplay > WEATHER_REPORT_MAX_LENGTH ||
+  if (currentWeatherReportDisplay >= WEATHER_REPORT_MAX_LENGTH ||
       weatherReport[currentWeatherReportDisplay].length() == 0) {
     currentWeatherReportDisplay = 1;
   }
@@ -573,8 +553,13 @@ void updateDisplay(String messageTop, String messageBottom) {
   }
   Wire.print(messageBottom);
 
-  Wire.endTransmission(); //Stop I2C transmission
-  isDisplayDirty = false;
+  uint8_t i2cError = Wire.endTransmission(); //Stop I2C transmission
+  if (i2cError != 0) {
+    Serial.print("I2C error on display: ");
+    Serial.println(i2cError);
+  } else {
+    isDisplayDirty = false;
+  }
   Serial.println("--------------");
 }
 #endif //IS_DISPLAY_ENABLED
@@ -720,13 +705,18 @@ void fetchWeatherReport() {
     int httpCode = http.GET();
 
     // httpCode will be negative on error
+    millisWhenWeatherLastFetched = millis();
     if (httpCode > 0) {
       // HTTP header has been send and Server response header has been handled
       // file found at server
       if (httpCode == HTTP_CODE_OK) {
         String payload = http.getString();
         parseWeatherReport(payload);
-        millisWhenWeatherLastFetched = millis();
+        Serial.print("Weather report: ");
+        Serial.print(millisWhenWeatherLastFetched);
+        Serial.print(" - ");
+        Serial.println(payload);
+        
       }
     } else {
       USE_SERIAL.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
@@ -759,8 +749,10 @@ void parseWeatherReport(String raw) {
       String token = raw.substring(tokenStart,i);
       i += 1;
       tokenStart = i;
-      weatherReport[tokensFound] = token;
-      tokensFound += 1;
+      if (tokensFound < WEATHER_REPORT_MAX_LENGTH) {
+        weatherReport[tokensFound] = token;
+        tokensFound += 1;
+      }
     }
   }
 }
