@@ -11,7 +11,7 @@
 #define IS_PRESENCE_ENABLED   false
 #define IS_WIFI_ENABLED       true
 #define IS_DISPLAY_ENABLED    true
-#define IS_FASTLED_ENABLED    true
+#define IS_FASTLED_ENABLED    false
 
 /*
  * WiFi
@@ -617,7 +617,9 @@ int getDebouncedSwitchPosition() {
       millis() - millisWhenCandidateChanged >= 50) {
     committedSwitchPosition = candidateSwitchPosition;
     nextSwitchPosition = committedSwitchPosition;
+#if IS_FASTLED_ENABLED
     isLedDirty = true;
+#endif
   }
   return nextSwitchPosition;
 }
