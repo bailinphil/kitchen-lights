@@ -72,6 +72,36 @@ uint8_t rainbowHue = 0;
 bool    rainbowAutoCycle = true;
 unsigned long millisOfLastRainbowShift = 0;
 int     rainbowTwistBaseline = 0;
+
+// Twinkle mode state
+#define TWINKLE_MODE_INDEX      8
+#define TWINKLE_MAX_ACTIVE      30
+#define TWINKLE_SPOT_LIFETIME   1500   // ms — how long a spot fades in and spreads
+#define TWINKLE_FADE_AMOUNT     5    // per-loop fade; ~2–4s full decay at 5ms loop
+#define TWINKLE_DEFAULT_SPAWN_MS 73  // ~15 spawns/sec
+#define TWINKLE_MIN_SPAWN_MS    30    // fastest (~30/sec)
+#define TWINKLE_MAX_SPAWN_MS    500   // slowest (~2/sec)
+
+struct TwinkleSpot {
+  uint8_t strip;          // 0 = pin25, 1 = pin17, 2 = pin16
+  uint8_t position;       // physical index into the strip's array
+  uint8_t hue;
+  unsigned long birthMs;
+  bool active;
+};
+TwinkleSpot twinkleSpots[TWINKLE_MAX_ACTIVE];
+
+// A small palette of complementary, fully-saturated hues.
+// Blues and greens only — avoids jarring hue clashes between neighbors.
+// HSV hues: ~80 (green) through ~170 (blue).
+const uint8_t twinklePalette[] = { 80, 96, 110, 128, 145, 160 };
+#define TWINKLE_PALETTE_SIZE 6
+
+uint8_t twinkleMonoHue = 0;
+bool    twinkleMonochrome = false;
+unsigned long millisBetweenTwinkleSpawns = TWINKLE_DEFAULT_SPAWN_MS;
+unsigned long millisOfLastTwinkleSpawn = 0;
+int     twinkleTwistBaseline = 0;
 #endif //IS_FASTLED_ENABLED
 
 /*
@@ -447,11 +477,18 @@ void loop()
 #endif // IS_WIFI_ENABLED
 
 #if IS_TWIST_ENABLED
-  if (twist.isPressed()) {
+  if (twist.isClicked()) {
 #if IS_FASTLED_ENABLED
     if (committedSwitchPosition == RAINBOW_MODE_INDEX) {
       // In Rainbow mode, the button toggles auto-cycle on/off.
       rainbowAutoCycle = !rainbowAutoCycle;
+    } else if (committedSwitchPosition == TWINKLE_MODE_INDEX) {
+      // In Twinkle mode, the button toggles monochrome on/off.
+      twinkleMonochrome = !twinkleMonochrome;
+      if (twinkleMonochrome) {
+        // Latch the most recently used palette hue.
+        twinkleMonoHue = twinklePalette[random(TWINKLE_PALETTE_SIZE)];
+      }
     } else
 #endif // IS_FASTLED_ENABLED
     {
@@ -481,6 +518,13 @@ void loop()
     int twistDelta = currentTwistPosition - rainbowTwistBaseline;
     rainbowHue += (uint8_t)twistDelta;  // wraps naturally
     rainbowTwistBaseline = currentTwistPosition;
+  } else if (nextSwitchPosition == TWINKLE_MODE_INDEX) {
+    // In Twinkle mode the twist controls spawn rate.
+    int twistDelta = currentTwistPosition - twinkleTwistBaseline;
+    // Each tick adjusts spawn interval by ~10ms.
+    int newInterval = (int)millisBetweenTwinkleSpawns - (twistDelta * 10);
+    millisBetweenTwinkleSpawns = constrain(newInterval, TWINKLE_MIN_SPAWN_MS, TWINKLE_MAX_SPAWN_MS);
+    twinkleTwistBaseline = currentTwistPosition;
   } else
 #endif // IS_FASTLED_ENABLED
   {
@@ -519,6 +563,8 @@ void loop()
 #if IS_FASTLED_ENABLED
   if (nextSwitchPosition == RAINBOW_MODE_INDEX) {
     updateRainbow();
+  } else if (nextSwitchPosition == TWINKLE_MODE_INDEX) {
+    updateTwinkle();
   } else if (isLedDirty) {
     setAllLEDs(modeColor[nextSwitchPosition]);
     FastLED.show();
@@ -668,6 +714,141 @@ void updateRainbow() {
     FastLED.show();
   }
 }
+
+// --- Twinkle helpers ---
+
+// Write a color to a physical LED position, clamping to strip bounds.
+void setStripPixel(uint8_t strip, int pos, CRGB color) {
+  switch (strip) {
+    case 0:
+      if (pos >= 0 && pos < NUM_LEDS_PIN25) ledsPin25[pos] = color;
+      break;
+    case 1:
+      if (pos >= 0 && pos < NUM_LEDS_PIN17) ledsPin17[pos] = color;
+      break;
+    case 2:
+      if (pos >= 0 && pos < NUM_LEDS_PIN16) ledsPin16[pos] = color;
+      break;
+  }
+}
+
+// Return the length of a strip by index.
+int stripLength(uint8_t strip) {
+  switch (strip) {
+    case 0: return NUM_LEDS_PIN25;
+    case 1: return NUM_LEDS_PIN17;
+    case 2: return NUM_LEDS_PIN16;
+    default: return 0;
+  }
+}
+
+// Check whether a candidate position on a strip is too close to an
+// active spot that still has significant lifetime remaining.
+bool isTooCloseToActiveSpot(uint8_t strip, uint8_t pos) {
+  unsigned long now = millis();
+  for (int i = 0; i < TWINKLE_MAX_ACTIVE; i++) {
+    if (!twinkleSpots[i].active) continue;
+    if (twinkleSpots[i].strip != strip) continue;
+    // "Significant time left" = less than halfway through its lifetime.
+    unsigned long age = now - twinkleSpots[i].birthMs;
+    if (age > TWINKLE_SPOT_LIFETIME / 2) continue;
+    // Too close if within ±2 of an active bright spot.
+    int dist = abs((int)pos - (int)twinkleSpots[i].position);
+    if (dist <= 2) return true;
+  }
+  return false;
+}
+
+// Spawn a new twinkle spot in the first available slot.
+// Tries a few random positions to avoid landing on or next to a
+// still-bright spot; gives up after a handful of attempts.
+#define TWINKLE_SPAWN_ATTEMPTS 5
+void spawnTwinkleSpot() {
+  for (int i = 0; i < TWINKLE_MAX_ACTIVE; i++) {
+    if (!twinkleSpots[i].active) {
+      uint8_t strip = random(3);
+      uint8_t pos = random(stripLength(strip));
+
+      // Try to find a position that isn't crowded.
+      for (int attempt = 0; attempt < TWINKLE_SPAWN_ATTEMPTS; attempt++) {
+        if (!isTooCloseToActiveSpot(strip, pos)) break;
+        strip = random(3);
+        pos = random(stripLength(strip));
+      }
+      // If we still collide after all attempts, spawn anyway — it's
+      // better than visibly dropping spawns.
+
+      twinkleSpots[i].strip = strip;
+      twinkleSpots[i].position = pos;
+      if (twinkleMonochrome) {
+        twinkleSpots[i].hue = twinkleMonoHue;
+      } else {
+        uint8_t paletteIndex = random(TWINKLE_PALETTE_SIZE);
+        twinkleSpots[i].hue = twinklePalette[paletteIndex];
+        twinkleMonoHue = twinklePalette[paletteIndex];  // latch for mono toggle
+      }
+      twinkleSpots[i].birthMs = millis();
+      twinkleSpots[i].active = true;
+      return;
+    }
+  }
+  // All slots full — skip this spawn.
+}
+
+// Refresh active twinkle spots: fade in over lifetime, spread to neighbors.
+void updateTwinkleSpots() {
+  unsigned long now = millis();
+  for (int i = 0; i < TWINKLE_MAX_ACTIVE; i++) {
+    if (!twinkleSpots[i].active) continue;
+
+    unsigned long age = now - twinkleSpots[i].birthMs;
+    if (age > TWINKLE_SPOT_LIFETIME) {
+      twinkleSpots[i].active = false;
+      continue;
+    }
+
+    // Brightness ramps from 0 → 255 over the first half, then holds at 255.
+    float fraction = (float)age / TWINKLE_SPOT_LIFETIME;
+    uint8_t brightness;
+    if (fraction < 0.5) {
+      brightness = (uint8_t)(255 * (fraction * 2.0));  // ramp up
+    } else {
+      brightness = 255;  // hold
+    }
+
+    CRGB color = CHSV(twinkleSpots[i].hue, 255, brightness);
+    uint8_t s = twinkleSpots[i].strip;
+    int p = twinkleSpots[i].position;
+
+    // Center pixel at full computed brightness.
+    setStripPixel(s, p, color);
+
+    // Neighbors at half brightness for a gentle spread.
+    CRGB neighborColor = CHSV(twinkleSpots[i].hue, 255, brightness / 2);
+    setStripPixel(s, p - 1, neighborColor);
+    setStripPixel(s, p + 1, neighborColor);
+  }
+}
+
+// Main Twinkle update — called every loop() when in Twinkle mode.
+void updateTwinkle() {
+  // Global fade: every LED dims a little each frame.
+  fadeToBlackBy(ledsPin25, NUM_LEDS_PIN25, TWINKLE_FADE_AMOUNT);
+  fadeToBlackBy(ledsPin17, NUM_LEDS_PIN17, TWINKLE_FADE_AMOUNT);
+  fadeToBlackBy(ledsPin16, NUM_LEDS_PIN16, TWINKLE_FADE_AMOUNT);
+
+  // Spawn new spots at the configured rate.
+  unsigned long now = millis();
+  if (now - millisOfLastTwinkleSpawn >= millisBetweenTwinkleSpawns) {
+    millisOfLastTwinkleSpawn = now;
+    spawnTwinkleSpot();
+  }
+
+  // Refresh active spots (overrides the fade for living spots).
+  updateTwinkleSpots();
+
+  FastLED.show();
+}
 #endif
 
 
@@ -740,6 +921,19 @@ int getDebouncedSwitchPosition() {
       millisOfLastRainbowShift = millis();
 #if IS_TWIST_ENABLED
       rainbowTwistBaseline = twist.getCount();
+#endif
+      setAllLEDs(CRGB::Black);
+    }
+    if (nextSwitchPosition == TWINKLE_MODE_INDEX) {
+      // Entering Twinkle: clear strips and reset all twinkle state.
+      for (int i = 0; i < TWINKLE_MAX_ACTIVE; i++) {
+        twinkleSpots[i].active = false;
+      }
+      twinkleMonochrome = false;
+      millisBetweenTwinkleSpawns = TWINKLE_DEFAULT_SPAWN_MS;
+      millisOfLastTwinkleSpawn = millis();
+#if IS_TWIST_ENABLED
+      twinkleTwistBaseline = twist.getCount();
 #endif
       setAllLEDs(CRGB::Black);
     }
