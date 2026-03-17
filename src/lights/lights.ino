@@ -64,6 +64,14 @@ CRGB ledsPin16[NUM_LEDS_PIN16];
 CRGB previousColor;
 int previousBrightness;
 bool isLedDirty = true;
+
+// Rainbow mode state
+#define RAINBOW_MODE_INDEX      7
+#define RAINBOW_PROPAGATION_MS  3000
+uint8_t rainbowHue = 0;
+bool    rainbowAutoCycle = true;
+unsigned long millisOfLastRainbowShift = 0;
+int     rainbowTwistBaseline = 0;
 #endif //IS_FASTLED_ENABLED
 
 /*
@@ -81,7 +89,7 @@ String modeName[] = {
   "Dishes",
   "Night",
   "Sparkles",
-  "Racetrack",
+  "Rainbow",
   "Twinkle",
   "Away",
 };
@@ -95,7 +103,7 @@ CRGB modeColor[] = {
   CRGB::Orange,      // Dishes
   CRGB::Red,         // Night
   CRGB::BlueViolet,  // Sparkles
-  CRGB::Goldenrod,   // Racetrack
+  CRGB::Goldenrod,   // Rainbow (unused — Rainbow has its own update path)
   CRGB::ForestGreen, // Twinkle
   CRGB::DimGray,     // Away
   CRGB::Black,
@@ -125,7 +133,7 @@ uint8_t twist_colors[][3] = {
   {100,  30,   0},  // Dishes
   { 40,   2,   0},  // Night
   {255,   0,   0},  // Sparkles
-  {  0, 255,   0},  // Racetrack
+  {  0, 255,   0},  // Rainbow
   {  0,   0, 255},  // Twinkle
   {  0,  40,  40},  // Away
 };
@@ -440,9 +448,17 @@ void loop()
 
 #if IS_TWIST_ENABLED
   if (twist.isPressed()) {
-    twistBrightnessWindowCenter = twist.getCount();
-    twistBrightnessWindowMin = twist.getCount() - twistBrightnessWindowSize;
-    twistBrightnessWindowMax = twist.getCount() + twistBrightnessWindowSize;
+#if IS_FASTLED_ENABLED
+    if (nextSwitchPosition == RAINBOW_MODE_INDEX) {
+      // In Rainbow mode, the button toggles auto-cycle on/off.
+      rainbowAutoCycle = !rainbowAutoCycle;
+    } else
+#endif // IS_FASTLED_ENABLED
+    {
+      twistBrightnessWindowCenter = twist.getCount();
+      twistBrightnessWindowMin = twist.getCount() - twistBrightnessWindowSize;
+      twistBrightnessWindowMax = twist.getCount() + twistBrightnessWindowSize;
+    }
   }
 #endif
 
@@ -458,23 +474,36 @@ void loop()
 
 #if IS_TWIST_ENABLED
   int currentTwistPosition = twist.getCount();
-  clampTwistWindow(currentTwistPosition);
-  float twistedPositionInWindow = (currentTwistPosition - twistBrightnessWindowMin) / (1.0 * twistBrightnessWindowSize);
-  int requestedBrightness = (int)(255 * twistedPositionInWindow);
+
+#if IS_FASTLED_ENABLED
+  if (nextSwitchPosition == RAINBOW_MODE_INDEX) {
+    // In Rainbow mode the twist controls hue, not brightness.
+    int twistDelta = currentTwistPosition - rainbowTwistBaseline;
+    rainbowHue += (uint8_t)twistDelta;  // wraps naturally
+    rainbowTwistBaseline = currentTwistPosition;
+  } else
+#endif // IS_FASTLED_ENABLED
+  {
+    // Normal modes: twist controls brightness.
+    clampTwistWindow(currentTwistPosition);
+    float twistedPositionInWindow = (currentTwistPosition - twistBrightnessWindowMin) / (1.0 * twistBrightnessWindowSize);
+    int requestedBrightness = (int)(255 * twistedPositionInWindow);
 
 #if IS_PRESENCE_ENABLED
-  // In Night mode, turn off the lights when no presence has been detected for a while.
-  if (nextSwitchPosition == 5) {
-    requestedBrightness = applyNightFade(requestedBrightness);
-  }
+    // In Night mode, turn off the lights when no presence has been detected for a while.
+    if (nextSwitchPosition == 5) {
+      requestedBrightness = applyNightFade(requestedBrightness);
+    }
 #endif // IS_PRESENCE_ENABLED
 
 #if IS_FASTLED_ENABLED
-  if(requestedBrightness != previousBrightness){
-    FastLED.setBrightness(requestedBrightness);
-    isLedDirty = true;
-  }
+    if(requestedBrightness != previousBrightness){
+      FastLED.setBrightness(requestedBrightness);
+      previousBrightness = requestedBrightness;
+      isLedDirty = true;
+    }
 #endif // IS_FASTLED_ENABLED
+  }
   uint8_t* tc = twist_colors[nextSwitchPosition];
   twist.setColor(tc[0],tc[1],tc[2]);
 #endif // IS_TWIST_ENABLED
@@ -488,10 +517,9 @@ void loop()
 #endif // IS_DISPLAY_ENABLED
 
 #if IS_FASTLED_ENABLED
-  if(isLedDirty){
-#if IS_TWIST_ENABLED
-    previousBrightness = requestedBrightness;
-#endif // IS_TWIST_ENABLED
+  if (nextSwitchPosition == RAINBOW_MODE_INDEX) {
+    updateRainbow();
+  } else if (isLedDirty) {
     setAllLEDs(modeColor[nextSwitchPosition]);
     FastLED.show();
     isLedDirty = false;
@@ -592,6 +620,54 @@ void setAllLEDs(CRGB color) {
   setUnderCabinetLEDs(color);
   setCeilingLEDs(color);
 }
+
+// Shift the under-cabinet strip one position to the right (logically,
+// left-to-right) and inject a new color at the leftmost end.
+// Physical wiring is right-to-left, so leftmost = highest index.
+void shiftUnderCabinetRight(CRGB newColor) {
+  for (int i = 0; i < NUM_LEDS_PIN25 - 1; i++) {
+    ledsPin25[i] = ledsPin25[i + 1];
+  }
+  ledsPin25[NUM_LEDS_PIN25 - 1] = newColor;
+}
+
+// Shift the ceiling strips one position to the right (logically) and
+// inject a new color at the leftmost end.  Pin 17 (reversed wiring)
+// feeds into pin 16 (natural wiring) so the animation crosses over.
+void shiftCeilingRight(CRGB newColor) {
+  // Shift pin 16 right (natural order, increasing index)
+  for (int i = NUM_LEDS_PIN16 - 1; i > 0; i--) {
+    ledsPin16[i] = ledsPin16[i - 1];
+  }
+  // Crossover: pin 17 rightmost logical (physical index 0) → pin 16 leftmost
+  ledsPin16[0] = ledsPin17[0];
+  // Shift pin 17 right in logical order (decreasing physical index)
+  for (int i = 0; i < NUM_LEDS_PIN17 - 1; i++) {
+    ledsPin17[i] = ledsPin17[i + 1];
+  }
+  // Inject at pin 17 leftmost logical (physical index N-1)
+  ledsPin17[NUM_LEDS_PIN17 - 1] = newColor;
+}
+
+// Rainbow animation: shift all strips and inject the current hue.
+// Called every loop() iteration when in Rainbow mode; the shift only
+// happens when enough time has elapsed for one propagation step.
+void updateRainbow() {
+  unsigned long now = millis();
+  int longestRun = max((int)NUM_LEDS_PIN25, (int)(NUM_LEDS_PIN17 + NUM_LEDS_PIN16));
+  unsigned long shiftInterval = RAINBOW_PROPAGATION_MS / longestRun;
+
+  if (now - millisOfLastRainbowShift >= shiftInterval) {
+    millisOfLastRainbowShift = now;
+    CRGB color = CHSV(rainbowHue, 255, 255);
+    shiftUnderCabinetRight(color);
+    shiftCeilingRight(color);
+    if (rainbowAutoCycle) {
+      rainbowHue++;  // wraps naturally at 256 → 0
+    }
+    FastLED.show();
+  }
+}
 #endif
 
 
@@ -656,6 +732,17 @@ int getDebouncedSwitchPosition() {
     nextSwitchPosition = committedSwitchPosition;
 #if IS_FASTLED_ENABLED
     isLedDirty = true;
+    if (nextSwitchPosition == RAINBOW_MODE_INDEX) {
+      // Entering Rainbow: pick a random starting hue, reset state, and
+      // clear the strips so colors grow outward from the left.
+      rainbowHue = random(256);
+      rainbowAutoCycle = true;
+      millisOfLastRainbowShift = millis();
+#if IS_TWIST_ENABLED
+      rainbowTwistBaseline = twist.getCount();
+#endif
+      setAllLEDs(CRGB::Black);
+    }
 #endif
   }
   return nextSwitchPosition;
