@@ -53,8 +53,9 @@ bool isLedDirty = true;
  * Mode Switching
  */
 #define MODE_SWITCH_PIN A5
-int latestSwitchPosition = -1;
-int earlierSwitchPosition = -1;
+int candidateSwitchPosition = -1;
+int committedSwitchPosition = 0;
+unsigned long millisWhenCandidateChanged = 0;
 String modeName[] = {
   "Standby",
   "Routine",
@@ -430,30 +431,8 @@ void loop()
   }
 #endif
 
-  int currentSwitchPosition = getSwitchPosition();
-  // sometimes the analog readings of the switch "flicker" out of range for a moment.
-  // account for this by looking at the two previous readings and the current one.
-  // of the three of those, one position should be present in two out of three
-  // readings. That's the one we want to use.
-  //
-  // earlier latest current => next
-  // A A A => A
-  // A A B => A
-  // A B A => A
-  // A B B => B
-  // B A A => A
-  // B A B => B
-  // B B A => B
-  // B B B => B
-  int nextSwitchPosition = earlierSwitchPosition;
-  if (currentSwitchPosition != earlierSwitchPosition && latestSwitchPosition == currentSwitchPosition) {
-    nextSwitchPosition = currentSwitchPosition;
-  }
-  if (nextSwitchPosition != currentSwitchPosition) {
-    isLedDirty = true;
-  }
-  earlierSwitchPosition = latestSwitchPosition;
-  latestSwitchPosition = currentSwitchPosition;
+  // figure out what position the switch is in, while ignoring noise
+  int nextSwitchPosition = getDebouncedSwitchPosition();
 
 #if IS_PRESENCE_ENABLED
   int detectedPresence = checkPresence();
@@ -481,7 +460,7 @@ void loop()
     isLedDirty = true;
   }
 #endif // IS_FASTLED_ENABLED
-  uint8_t* tc = twist_colors[currentSwitchPosition];
+  uint8_t* tc = twist_colors[nextSwitchPosition];
   twist.setColor(tc[0],tc[1],tc[2]);
 #endif // IS_TWIST_ENABLED
 
@@ -624,6 +603,24 @@ int getSwitchPosition() {
   return val;
 }
 
+// Debounce the mode switch and return the current committed switch position.
+// Reads the raw position and only commits a new value once it has been stable
+// for 50ms, filtering out sporadic analog noise.
+int getDebouncedSwitchPosition() {
+  int rawSwitchPosition = getSwitchPosition();
+  if (rawSwitchPosition != candidateSwitchPosition) {
+    candidateSwitchPosition = rawSwitchPosition;
+    millisWhenCandidateChanged = millis();
+  }
+  int nextSwitchPosition = committedSwitchPosition;
+  if (candidateSwitchPosition != committedSwitchPosition &&
+      millis() - millisWhenCandidateChanged >= 50) {
+    committedSwitchPosition = candidateSwitchPosition;
+    nextSwitchPosition = committedSwitchPosition;
+    isLedDirty = true;
+  }
+  return nextSwitchPosition;
+}
 
 
 #if IS_TWIST_ENABLED
