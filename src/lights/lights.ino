@@ -6,12 +6,12 @@
 /*
  * Hardware Selection
  */
-#define IS_AIR_SENSOR_ENABLED false
+#define IS_AIR_SENSOR_ENABLED true
 #define IS_TWIST_ENABLED      true
-#define IS_PRESENCE_ENABLED   false
+#define IS_PRESENCE_ENABLED   true
 #define IS_WIFI_ENABLED       true
 #define IS_DISPLAY_ENABLED    true
-#define IS_FASTLED_ENABLED    false
+#define IS_FASTLED_ENABLED    true
 
 /*
  * WiFi
@@ -37,16 +37,33 @@ unsigned long millisWhenAirLastReported = 0;
 #if IS_FASTLED_ENABLED
 #include <FastLED.h>
 
-// Information about the LED strip itself
-#define NUM_LEDS    100
+// LED chipset configuration
 #define CHIPSET     WS2811
 #define COLOR_ORDER BRG
-CRGB leds[NUM_LEDS];
+#define BRIGHTNESS  20
+
+// Under-cabinet run (pin 25), wired right-to-left in the real world.
+// Logical addressing is left-to-right: D, C, B, A.
+#define UNDER_CAB_RIGHT  25  // under the rightmost cabinet
+#define OVER_SINK  25  // around and over the sink
+#define UNDER_CAB_CORNER  25  // left wall cabinet 1
+#define UNDER_CAB_LEFT  25  // left wall cabinet 2
+#define NUM_LEDS_PIN25 (UNDER_CAB_RIGHT + OVER_SINK + UNDER_CAB_CORNER + UNDER_CAB_LEFT)
+CRGB ledsPin25[NUM_LEDS_PIN25];
+
+// Ceiling run — two pins acting as one logical strip, left to right.
+// Pin 17: wired right-to-left (reversed in software).
+// Pin 16: wired left-to-right (natural order).
+#define CEILING_LEFT  50  // pin 17
+#define CEILING_RIGHT  50  // pin 16
+#define NUM_LEDS_PIN17 CEILING_LEFT
+#define NUM_LEDS_PIN16 CEILING_RIGHT
+CRGB ledsPin17[NUM_LEDS_PIN17];
+CRGB ledsPin16[NUM_LEDS_PIN16];
 
 CRGB previousColor;
 int previousBrightness;
 bool isLedDirty = true;
-#define BRIGHTNESS  20
 #endif //IS_FASTLED_ENABLED
 
 /*
@@ -207,13 +224,11 @@ void setup() {
 #if IS_FASTLED_ENABLED
 void setupLEDs() {
   delay( 3000 ); // power-up safety delay
-  // It's important to set the color correction for your LED strip here,
-  // so that colors can be more accurately rendered through the 'temperature' profiles
   // Use pins 25, 17, and 16 because they're adjacent to one another on my board, and
   // Pins 1 and 3 are the default Serial TX and RX pins. This was stomping on debugging.
-  FastLED.addLeds<CHIPSET, 25, COLOR_ORDER>(leds, NUM_LEDS);
-  FastLED.addLeds<CHIPSET, 17, COLOR_ORDER>(leds, NUM_LEDS);
-  FastLED.addLeds<CHIPSET, 16, COLOR_ORDER>(leds, NUM_LEDS);
+  FastLED.addLeds<CHIPSET, 25, COLOR_ORDER>(ledsPin25, NUM_LEDS_PIN25);  // under-cabinet
+  FastLED.addLeds<CHIPSET, 17, COLOR_ORDER>(ledsPin17, NUM_LEDS_PIN17);  // ceiling left
+  FastLED.addLeds<CHIPSET, 16, COLOR_ORDER>(ledsPin16, NUM_LEDS_PIN16);  // ceiling right
   FastLED.setBrightness( BRIGHTNESS );
   previousBrightness = BRIGHTNESS;
 }
@@ -550,10 +565,32 @@ void updateDisplay(String messageTop, String messageBottom) {
  ****************************************************************************/
 
 #if IS_FASTLED_ENABLED
-void setAllLEDs(CRGB color) {
-  for (int i = 0; i < NUM_LEDS; i++) {
-    leds[i] = color;
+// Fill the under-cabinet strip (pin 25).
+// The strip is wired right-to-left, so we reverse the index so that
+// logical position 0 corresponds to the leftmost LED (section D).
+void setUnderCabinetLEDs(CRGB color) {
+  for (int i = 0; i < NUM_LEDS_PIN25; i++) {
+    ledsPin25[NUM_LEDS_PIN25 - 1 - i] = color;
   }
+}
+
+// Fill the ceiling strips (pins 17 + 16) as one continuous run.
+// Pin 17 is wired right-to-left (reversed here), then pin 16 continues
+// left-to-right (natural order), so an animation starting at logical
+// position 0 flows seamlessly from pin 17 into pin 16.
+void setCeilingLEDs(CRGB color) {
+  for (int i = 0; i < NUM_LEDS_PIN17; i++) {
+    ledsPin17[NUM_LEDS_PIN17 - 1 - i] = color;
+  }
+  for (int i = 0; i < NUM_LEDS_PIN16; i++) {
+    ledsPin16[i] = color;
+  }
+}
+
+// Fill every LED on every strip with the same color.
+void setAllLEDs(CRGB color) {
+  setUnderCabinetLEDs(color);
+  setCeilingLEDs(color);
 }
 #endif
 
