@@ -449,7 +449,7 @@ void loop()
 #if IS_TWIST_ENABLED
   if (twist.isPressed()) {
 #if IS_FASTLED_ENABLED
-    if (nextSwitchPosition == RAINBOW_MODE_INDEX) {
+    if (committedSwitchPosition == RAINBOW_MODE_INDEX) {
       // In Rainbow mode, the button toggles auto-cycle on/off.
       rainbowAutoCycle = !rainbowAutoCycle;
     } else
