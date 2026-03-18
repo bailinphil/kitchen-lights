@@ -103,6 +103,10 @@ unsigned long millisBetweenTwinkleSpawns = TWINKLE_DEFAULT_SPAWN_MS;
 unsigned long millisOfLastTwinkleSpawn = 0;
 int     twinkleTwistBaseline = 0;
 
+// Mode indices
+#define ROUTINE_MODE_INDEX  1
+#define NIGHT_MODE_INDEX    5
+
 // Fire mode state
 #define FIRE_MODE_INDEX     6
 #define FIRE_COOLING        55    // higher = shorter flames, more cooling per frame
@@ -200,6 +204,13 @@ String messageTop = "";
 String messageBottom = "";
 String weatherReport[10];
 int currentWeatherReportDisplay = 1;
+// Parsed from weatherReport[0] and the Sunrise/Sunset tokens.
+int currentTimeHours = -1;
+int currentTimeMinutes = -1;
+int sunriseHours = -1;
+int sunriseMinutes = -1;
+int sunsetHours = -1;
+int sunsetMinutes = -1;
 unsigned long millisWhenBottomRowUpdated = 0;
 #define WEATHER_REPORT_MAX_LENGTH 10
 bool isDisplayDirty = true;
@@ -218,9 +229,11 @@ int16_t motionVal = 0;
 float temperatureVal = 0;
 unsigned long millisOfLastPresenceDetection = 0;
 unsigned long millisOfPresenceFadeInStart = 0;
-#define millisPresenceTimeout 20000
+#define millisPresenceTimeout        20000   // Night mode: 20 seconds
+#define millisRoutinePresenceTimeout 60000   // Routine mode: 1 minute
 #define millisFadeDuration 3000
 #define millisFadeInDuration 3000
+int applyPresenceFade(int brightness, unsigned long timeout = millisPresenceTimeout);
 #endif // IS_PRESENCE_ENABLED
 
 /*
@@ -568,8 +581,10 @@ void loop()
 
 #if IS_PRESENCE_ENABLED
     // Fade brightness based on presence detection.
-    if (nextSwitchPosition == 5) {
+    if (nextSwitchPosition == NIGHT_MODE_INDEX) {
       requestedBrightness = applyPresenceFade(requestedBrightness);
+    } else if (nextSwitchPosition == ROUTINE_MODE_INDEX) {
+      requestedBrightness = applyPresenceFade(requestedBrightness, millisRoutinePresenceTimeout);
     }
 #endif // IS_PRESENCE_ENABLED
 
@@ -600,6 +615,14 @@ void loop()
     updateRainbow();
   } else if (nextSwitchPosition == TWINKLE_MODE_INDEX) {
     updateTwinkle();
+  } else if (nextSwitchPosition == ROUTINE_MODE_INDEX) {
+    CRGB routineColor = getRoutineColor();
+    if (isLedDirty || routineColor != previousColor) {
+      setAllLEDs(routineColor);
+      FastLED.show();
+      previousColor = routineColor;
+      isLedDirty = false;
+    }
   } else if (isLedDirty) {
     setAllLEDs(modeColor[nextSwitchPosition]);
     FastLED.show();
@@ -1098,17 +1121,18 @@ int16_t checkPresence() {
 }
 
 // Fade brightness in when presence is detected and out when it times out.
-int applyPresenceFade(int brightness) {
+// timeout controls how long after the last detection before fading begins.
+int applyPresenceFade(int brightness, unsigned long timeout) {
   unsigned long now = millis();
   unsigned long millisSincePresence = now - millisOfLastPresenceDetection;
 
   // Phase 3: fully timed out — lights off.
-  if (millisSincePresence > millisPresenceTimeout + millisFadeDuration) {
+  if (millisSincePresence > timeout + millisFadeDuration) {
     return 0;
   }
   // Phase 2: fading out after timeout.
-  if (millisSincePresence > millisPresenceTimeout) {
-    float amountFadeComplete = 1.0 * (millisSincePresence - millisPresenceTimeout) / millisFadeDuration;
+  if (millisSincePresence > timeout) {
+    float amountFadeComplete = 1.0 * (millisSincePresence - timeout) / millisFadeDuration;
     int brightnessReduction = (int)(255 * amountFadeComplete);
     return max(0, brightness - brightnessReduction);
   }
@@ -1130,12 +1154,33 @@ int applyPresenceFade(int brightness) {
  * WEATHER                                                                   *
  *                                                                           *
  ****************************************************************************/
+// Returns the LED color Routine mode should use based on the current time
+// relative to sunrise and sunset. Falls back to the default Routine color
+// if time data hasn't been parsed yet.
+CRGB getRoutineColor() {
+  if (currentTimeHours < 0 || sunriseHours < 0 || sunsetHours < 0) {
+    return modeColor[ROUTINE_MODE_INDEX];
+  }
+  int now     = currentTimeHours * 60 + currentTimeMinutes;
+  int sunrise = sunriseHours     * 60 + sunriseMinutes;
+  int sunset  = sunsetHours      * 60 + sunsetMinutes;
+
+  if(millis() % 5000 < 10) USE_SERIAL.printf("now: %d  | sunrise: %d |  sunset: %d\n", now, sunrise, sunset);
+
+
+  if (now < sunrise - 60)  return modeColor[NIGHT_MODE_INDEX];   // deep night
+  if (now < sunrise + 30)  return modeColor[4];                  // Dishes — near sunrise
+  if (now < sunset  - 60)  return modeColor[2];                  // Cook Day
+  if (now < sunset)        return modeColor[3];                  // Cook Night — pre-sunset
+  if (now < sunset  + 60)  return modeColor[4];                  // Dishes — post-sunset
+  return modeColor[NIGHT_MODE_INDEX];                            // night
+}
+
 #if IS_WIFI_ENABLED
 void fetchWeatherReport() {
   // wait for WiFi connection
   Serial.println("about to try to use wifi");
   if ((wifiMulti.run() == WL_CONNECTED)) {
-
 
     HTTPClient http;
     http.begin(WEATHER_URL);
@@ -1198,6 +1243,34 @@ void parseWeatherReport(String raw) {
   // Capture the final token after the last delimiter.
   if (tokenStart < raw.length() && tokensFound < WEATHER_REPORT_MAX_LENGTH) {
     weatherReport[tokensFound] = raw.substring(tokenStart);
+  }
+
+  // Parse current time from weatherReport[0] (format "H:MM" or "HH:MM").
+  {
+    int colon = weatherReport[0].indexOf(':');
+    if (colon > 0) {
+      currentTimeHours   = weatherReport[0].substring(0, colon).toInt();
+      currentTimeMinutes = weatherReport[0].substring(colon + 1).toInt();
+    }
+  }
+
+  // Scan all tokens for "Sunrise: ..." and "Sunset: ..." entries.
+  for (int i = 1; i < WEATHER_REPORT_MAX_LENGTH; ++i) {
+    if (weatherReport[i].startsWith("Sunrise: ")) {
+      String t = weatherReport[i].substring(9);  // after "Sunrise: "
+      int colon = t.indexOf(':');
+      if (colon > 0) {
+        sunriseHours   = t.substring(0, colon).toInt();
+        sunriseMinutes = t.substring(colon + 1).toInt();
+      }
+    } else if (weatherReport[i].startsWith("Sunset: ")) {
+      String t = weatherReport[i].substring(8);  // after "Sunset: "
+      int colon = t.indexOf(':');
+      if (colon > 0) {
+        sunsetHours   = t.substring(0, colon).toInt();
+        sunsetMinutes = t.substring(colon + 1).toInt();
+      }
+    }
   }
 }
 #endif // IS_WIFI_ENABLED
@@ -1290,7 +1363,6 @@ void sendAirReport(String airUrl) {
         millisWhenAirLastReported = millis();
         String payload = http.getString();
         Serial.println(payload);
-
       }
     } else {
       USE_SERIAL.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
