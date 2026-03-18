@@ -1106,11 +1106,13 @@ int16_t checkPresence() {
     sths34pf80_tmos_func_status_t status;
     mySensor.getStatus(&status);
 
-    // If presence flag is high, then print data
-    if (status.pres_flag == 1) {
+    // Require motion to corroborate presence detection.
+    // The presence flag alone is prone to false positives from ambient
+    // temperature drift, so we only trigger when motion is also detected.
+    if (status.pres_flag == 1 && status.mot_flag == 1) {
       // Presence Units: cm^-1
       mySensor.getPresenceValue(&presenceVal);
-      Serial.print("Presence: ");
+      Serial.print("Presence+Motion: ");
       Serial.print(presenceVal);
       Serial.println(" cm^-1");
       return presenceVal;
