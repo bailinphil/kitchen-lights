@@ -1195,6 +1195,10 @@ void parseWeatherReport(String raw) {
       }
     }
   }
+  // Capture the final token after the last delimiter.
+  if (tokenStart < raw.length() && tokensFound < WEATHER_REPORT_MAX_LENGTH) {
+    weatherReport[tokensFound] = raw.substring(tokenStart);
+  }
 }
 #endif // IS_WIFI_ENABLED
 
