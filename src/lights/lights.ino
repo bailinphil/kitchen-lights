@@ -217,8 +217,10 @@ int16_t presenceVal = 0;
 int16_t motionVal = 0;
 float temperatureVal = 0;
 unsigned long millisOfLastPresenceDetection = 0;
-#define millisTimeoutAtNight 20000
+unsigned long millisOfPresenceFadeInStart = 0;
+#define millisPresenceTimeout 20000
 #define millisFadeDuration 3000
+#define millisFadeInDuration 3000
 #endif // IS_PRESENCE_ENABLED
 
 /*
@@ -525,6 +527,11 @@ void loop()
 #if IS_PRESENCE_ENABLED
   int detectedPresence = checkPresence();
   if (detectedPresence != 0) {
+    // If lights were off or fading out, start a fade-in.
+    unsigned long millisSincePresence = millis() - millisOfLastPresenceDetection;
+    if (millisSincePresence > millisPresenceTimeout) {
+      millisOfPresenceFadeInStart = millis();
+    }
     millisOfLastPresenceDetection = millis();
   }
 #endif
@@ -560,9 +567,9 @@ void loop()
     int requestedBrightness = (int)(255 * twistedPositionInWindow);
 
 #if IS_PRESENCE_ENABLED
-    // In Night mode, turn off the lights when no presence has been detected for a while.
+    // Fade brightness based on presence detection.
     if (nextSwitchPosition == 5) {
-      requestedBrightness = applyNightFade(requestedBrightness);
+      requestedBrightness = applyPresenceFade(requestedBrightness);
     }
 #endif // IS_PRESENCE_ENABLED
 
@@ -1090,18 +1097,30 @@ int16_t checkPresence() {
   return 0;
 }
 
-// In Night mode, fade brightness to zero after the presence timeout expires.
-int applyNightFade(int brightness) {
-  unsigned long millisSincePresence = millis() - millisOfLastPresenceDetection;
-  if (millisSincePresence <= millisTimeoutAtNight) {
-    return brightness;
+// Fade brightness in when presence is detected and out when it times out.
+int applyPresenceFade(int brightness) {
+  unsigned long now = millis();
+  unsigned long millisSincePresence = now - millisOfLastPresenceDetection;
+
+  // Phase 3: fully timed out — lights off.
+  if (millisSincePresence > millisPresenceTimeout + millisFadeDuration) {
+    return 0;
   }
-  if (millisSincePresence < millisTimeoutAtNight + millisFadeDuration) {
-    float amountFadeComplete = 1.0 * (millisSincePresence - millisTimeoutAtNight) / millisFadeDuration;
+  // Phase 2: fading out after timeout.
+  if (millisSincePresence > millisPresenceTimeout) {
+    float amountFadeComplete = 1.0 * (millisSincePresence - millisPresenceTimeout) / millisFadeDuration;
     int brightnessReduction = (int)(255 * amountFadeComplete);
     return max(0, brightness - brightnessReduction);
   }
-  return 0;
+
+  // Phase 1: presence is active. Fade in if we recently came from darkness.
+  unsigned long millisSinceFadeIn = now - millisOfPresenceFadeInStart;
+  if (millisSinceFadeIn < millisFadeInDuration) {
+    float amountFadeInComplete = 1.0 * millisSinceFadeIn / millisFadeInDuration;
+    return (int)(brightness * amountFadeInComplete);
+  }
+
+  return brightness;
 }
 #endif // IS_PRESENCE_ENABLED
 
