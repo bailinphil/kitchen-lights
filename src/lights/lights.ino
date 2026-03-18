@@ -102,6 +102,23 @@ bool    twinkleMonochrome = false;
 unsigned long millisBetweenTwinkleSpawns = TWINKLE_DEFAULT_SPAWN_MS;
 unsigned long millisOfLastTwinkleSpawn = 0;
 int     twinkleTwistBaseline = 0;
+
+// Fire mode state
+#define FIRE_MODE_INDEX     6
+#define FIRE_COOLING        55    // higher = shorter flames, more cooling per frame
+#define FIRE_SPARKING       120   // chance (out of 255) of a new spark each frame
+#define FIRE_MIN_SPARKING   40    // calmest embers
+#define FIRE_MAX_SPARKING   200   // most intense fire
+#define FIRE_FRAME_MS       15    // ms between simulation steps (~3x slower than loop)
+
+uint8_t heatPin25[NUM_LEDS_PIN25];
+uint8_t heatPin17[NUM_LEDS_PIN17];
+uint8_t heatPin16[NUM_LEDS_PIN16];
+
+uint8_t fireSparking = FIRE_SPARKING;
+bool    fireCoolPalette = false;  // false = warm (red/orange), true = cool (blue/purple)
+int     fireTwistBaseline = 0;
+unsigned long millisOfLastFireFrame = 0;
 #endif //IS_FASTLED_ENABLED
 
 /*
@@ -118,7 +135,7 @@ String modeName[] = {
   "Cook Night",
   "Dishes",
   "Night",
-  "Sparkles",
+  "Fire",
   "Rainbow",
   "Twinkle",
   "Away",
@@ -132,7 +149,7 @@ CRGB modeColor[] = {
   CRGB::Blue,        // Cook Night
   CRGB::Orange,      // Dishes
   CRGB::Red,         // Night
-  CRGB::BlueViolet,  // Sparkles
+  CRGB::OrangeRed,   // Fire (fallback — Fire has its own update path)
   CRGB::Goldenrod,   // Rainbow (unused — Rainbow has its own update path)
   CRGB::ForestGreen, // Twinkle
   CRGB::DimGray,     // Away
@@ -162,7 +179,7 @@ uint8_t twist_colors[][3] = {
   {150, 100,  50},  // Cook Night
   {100,  30,   0},  // Dishes
   { 40,   2,   0},  // Night
-  {255,   0,   0},  // Sparkles
+  {255,  80,   0},  // Fire
   {  0, 255,   0},  // Rainbow
   {  0,   0, 255},  // Twinkle
   {  0,  40,  40},  // Away
@@ -479,7 +496,10 @@ void loop()
 #if IS_TWIST_ENABLED
   if (twist.isClicked()) {
 #if IS_FASTLED_ENABLED
-    if (committedSwitchPosition == RAINBOW_MODE_INDEX) {
+    if (committedSwitchPosition == FIRE_MODE_INDEX) {
+      // In Fire mode, the button toggles warm/cool palette.
+      fireCoolPalette = !fireCoolPalette;
+    } else if (committedSwitchPosition == RAINBOW_MODE_INDEX) {
       // In Rainbow mode, the button toggles auto-cycle on/off.
       rainbowAutoCycle = !rainbowAutoCycle;
     } else if (committedSwitchPosition == TWINKLE_MODE_INDEX) {
@@ -513,7 +533,13 @@ void loop()
   int currentTwistPosition = twist.getCount();
 
 #if IS_FASTLED_ENABLED
-  if (nextSwitchPosition == RAINBOW_MODE_INDEX) {
+  if (nextSwitchPosition == FIRE_MODE_INDEX) {
+    // In Fire mode the twist controls sparking intensity.
+    int twistDelta = currentTwistPosition - fireTwistBaseline;
+    int newSparking = (int)fireSparking + (twistDelta * 5);
+    fireSparking = constrain(newSparking, FIRE_MIN_SPARKING, FIRE_MAX_SPARKING);
+    fireTwistBaseline = currentTwistPosition;
+  } else if (nextSwitchPosition == RAINBOW_MODE_INDEX) {
     // In Rainbow mode the twist controls hue, not brightness.
     int twistDelta = currentTwistPosition - rainbowTwistBaseline;
     rainbowHue += (uint8_t)twistDelta;  // wraps naturally
@@ -561,7 +587,9 @@ void loop()
 #endif // IS_DISPLAY_ENABLED
 
 #if IS_FASTLED_ENABLED
-  if (nextSwitchPosition == RAINBOW_MODE_INDEX) {
+  if (nextSwitchPosition == FIRE_MODE_INDEX) {
+    updateFire();
+  } else if (nextSwitchPosition == RAINBOW_MODE_INDEX) {
     updateRainbow();
   } else if (nextSwitchPosition == TWINKLE_MODE_INDEX) {
     updateTwinkle();
@@ -849,6 +877,70 @@ void updateTwinkle() {
 
   FastLED.show();
 }
+
+// --- Fire helpers ---
+
+// Map a heat value (0–255) to a fire color.
+// Warm palette: black → red → orange → yellow → white (via HeatColor).
+// Cool palette: black → blue → purple → cyan → white (R and B swapped).
+CRGB fireColorFromHeat(uint8_t heat, bool cool) {
+  CRGB color = HeatColor(heat);
+  if (cool) {
+    // Swap red and blue channels for a blue-fire look.
+    uint8_t tmp = color.r;
+    color.r = color.b;
+    color.b = tmp;
+  }
+  return color;
+}
+
+// Run one frame of fire simulation on a single strip's heat array,
+// then write the resulting colors into the LED array.
+// The heat array is indexed in "logical" order (0 = fire source end).
+// If reversed is true, physical LED index is mirrored so that logical
+// index 0 maps to the highest physical index (for right-to-left wiring).
+void updateFireStrip(CRGB* leds, uint8_t* heat, int numLeds, bool reversed) {
+  // Step 1: Cool each cell by a small random amount.
+  for (int i = 0; i < numLeds; i++) {
+    heat[i] = qsub8(heat[i], random8(0, ((FIRE_COOLING * 10) / numLeds) + 2));
+  }
+
+  // Step 2: Drift heat "upward" (from low index toward high index).
+  // Work from the top down so we don't double-count.
+  for (int i = numLeds - 1; i >= 2; i--) {
+    heat[i] = (heat[i - 1] + heat[i - 2] + heat[i - 2]) / 3;
+  }
+
+  // Step 3: Randomly ignite new sparks near the bottom (source end).
+  if (random8() < fireSparking) {
+    int sparkPos = random8(7);  // one of the first 7 cells
+    if (sparkPos < numLeds) {
+      heat[sparkPos] = qadd8(heat[sparkPos], random8(160, 255));
+    }
+  }
+
+  // Step 4: Map heat to color and write to the LED array.
+  for (int i = 0; i < numLeds; i++) {
+    int physicalIndex = reversed ? (numLeds - 1 - i) : i;
+    leds[physicalIndex] = fireColorFromHeat(heat[i], fireCoolPalette);
+  }
+}
+
+// Main Fire update — called every loop() when in Fire mode.
+// Throttled to FIRE_FRAME_MS so the effect runs at a mellow pace.
+void updateFire() {
+  unsigned long now = millis();
+  if (now - millisOfLastFireFrame < FIRE_FRAME_MS) return;
+  millisOfLastFireFrame = now;
+
+  // Pin 25 (under-cabinet): wired right-to-left, fire source at left (reversed).
+  updateFireStrip(ledsPin25, heatPin25, NUM_LEDS_PIN25, true);
+  // Pin 17 (ceiling left): wired right-to-left, fire source at left (reversed).
+  updateFireStrip(ledsPin17, heatPin17, NUM_LEDS_PIN17, true);
+  // Pin 16 (ceiling right): wired left-to-right, fire source at left (natural).
+  updateFireStrip(ledsPin16, heatPin16, NUM_LEDS_PIN16, false);
+  FastLED.show();
+}
 #endif
 
 
@@ -913,6 +1005,18 @@ int getDebouncedSwitchPosition() {
     nextSwitchPosition = committedSwitchPosition;
 #if IS_FASTLED_ENABLED
     isLedDirty = true;
+    if (nextSwitchPosition == FIRE_MODE_INDEX) {
+      // Entering Fire: zero out heat arrays and reset state.
+      memset(heatPin25, 0, sizeof(heatPin25));
+      memset(heatPin17, 0, sizeof(heatPin17));
+      memset(heatPin16, 0, sizeof(heatPin16));
+      fireSparking = FIRE_SPARKING;
+      fireCoolPalette = false;
+#if IS_TWIST_ENABLED
+      fireTwistBaseline = twist.getCount();
+#endif
+      setAllLEDs(CRGB::Black);
+    }
     if (nextSwitchPosition == RAINBOW_MODE_INDEX) {
       // Entering Rainbow: pick a random starting hue, reset state, and
       // clear the strips so colors grow outward from the left.
