@@ -214,6 +214,8 @@ int sunsetMinutes = -1;
 unsigned long millisWhenBottomRowUpdated = 0;
 #define WEATHER_REPORT_MAX_LENGTH 10
 bool isDisplayDirty = true;
+unsigned long millisOfLastDisplayAttempt = 0;
+#define DISPLAY_RETRY_INTERVAL 2000  // wait 2s before retrying a failed write
 #endif // IS_DISPLAY_ENABLED
 
 /*
@@ -228,6 +230,7 @@ int16_t presenceVal = 0;
 int16_t motionVal = 0;
 float temperatureVal = 0;
 unsigned long millisOfLastPresenceDetection = 0;
+unsigned long millisOfLastPresenceCheck = 0;
 unsigned long millisOfPresenceFadeInStart = 0;
 #define millisPresenceTimeout        20000   // Night mode: 20 seconds
 #define millisRoutinePresenceTimeout 60000   // Routine mode: 1 minute
@@ -270,23 +273,31 @@ SCD4x sen41;
 
 void setup() {
   Serial.begin(115200); // communication speed for debug messages
+#if IS_DISPLAY_ENABLED
+  Wire.begin(); // Initialize I2C bus once, before any device setup
+#endif
 #if IS_FASTLED_ENABLED
   setupLEDs();
 #endif
 #if IS_DISPLAY_ENABLED
   setupDisplay();
+  delay(50);
 #endif
 #if IS_TWIST_ENABLED
   setupTwist();
+  delay(50);
 #endif
 #if IS_PRESENCE_ENABLED
   setupPresence();
+  delay(50);
 #endif
 #if IS_WIFI_ENABLED
   setupWiFi();
 #endif
 #if IS_AIR_SENSOR_ENABLED
+  delay(50);
   setupCO2Sensor();
+  delay(50);
   setupParticulateSensor();
 #endif // IS_AIR_SENSOR_ENABLED
 }
@@ -306,7 +317,7 @@ void setupLEDs() {
 
 #if IS_DISPLAY_ENABLED
 void setupDisplay() {
-  Wire.begin(); //Join the bus as master
+  // Wire.begin() is called once in setup() before any device init.
   //Send the reset command to the display - this forces the cursor to return to the beginning of the display
   Wire.beginTransmission(DISPLAY_ADDRESS1);
   Wire.write('|'); // Put LCD into setting mode
@@ -381,6 +392,11 @@ void setupParticulateSensor() {
         errorToString(error, errorMessage, 256);
         Serial.println(errorMessage);
     }
+
+    // The SEN55 needs time to boot after a reset before it will
+    // respond to I2C commands. Without this delay, subsequent reads
+    // fail with CRC or write errors.
+    delay(1000);
 
 // Print SEN55 module information if i2c buffers are large enough
 #ifdef USE_PRODUCT_INFO
@@ -538,7 +554,12 @@ void loop()
   int nextSwitchPosition = getDebouncedSwitchPosition();
 
 #if IS_PRESENCE_ENABLED
-  int detectedPresence = checkPresence();
+  delay(1); // brief gap between I2C devices to reduce bus contention
+  int detectedPresence = 0;
+  if (millis() - millisOfLastPresenceCheck > 150) {
+    millisOfLastPresenceCheck = millis();
+    detectedPresence = checkPresence();
+  }
   if (detectedPresence != 0) {
     // If lights were off or fading out, start a fade-in.
     unsigned long millisSincePresence = millis() - millisOfLastPresenceDetection;
@@ -550,6 +571,7 @@ void loop()
 #endif
 
 #if IS_TWIST_ENABLED
+  delay(1); // brief gap between I2C devices to reduce bus contention
   int currentTwistPosition = twist.getCount();
 
 #if IS_FASTLED_ENABLED
@@ -603,7 +625,8 @@ void loop()
 #if IS_DISPLAY_ENABLED
   messageTop = prepareTopMessage(nextSwitchPosition);
   messageBottom = prepareBottomMessage();
-  if (isDisplayDirty) {
+  if (isDisplayDirty && millis() - millisOfLastDisplayAttempt > DISPLAY_RETRY_INTERVAL) {
+    millisOfLastDisplayAttempt = millis();
     updateDisplay(messageTop, messageBottom);
   }
 #endif // IS_DISPLAY_ENABLED
@@ -666,11 +689,23 @@ String prepareBottomMessage() {
 void updateDisplay(String messageTop, String messageBottom) {
   Serial.println(messageTop);
   Serial.println(messageBottom);
-  Wire.beginTransmission(DISPLAY_ADDRESS1); // transmit to device #1
 
+  // Send the clear command in its own transaction — the OpenLCD needs
+  // ~10ms to execute it before it can accept new characters.
+  Wire.beginTransmission(DISPLAY_ADDRESS1);
   Wire.write('|'); //Put LCD into setting mode
   Wire.write('-'); //Send clear display command
+  uint8_t clearError = Wire.endTransmission();
+  if (clearError != 0) {
+    Serial.print("I2C error clearing display: ");
+    Serial.println(clearError);
+    return;
+  }
 
+  delay(10); // let the display finish the clear
+
+  // Now send the actual content.
+  Wire.beginTransmission(DISPLAY_ADDRESS1);
   Wire.print(messageTop);
   unsigned int charsPrinted = messageTop.length();
   while (charsPrinted < 16) {
@@ -1099,19 +1134,28 @@ void clampTwistWindow(int currentTwistPosition) {
 #if IS_PRESENCE_ENABLED
 int16_t checkPresence() {
   sths34pf80_tmos_drdy_status_t dataReady;
-  mySensor.getDataReady(&dataReady);
+  if (mySensor.getDataReady(&dataReady) != 0) {
+    Serial.println("I2C error reading presence data-ready");
+    return 0;
+  }
 
   // Check whether sensor has new data - run through loop if data is ready
   if (dataReady.drdy == 1) {
     sths34pf80_tmos_func_status_t status;
-    mySensor.getStatus(&status);
+    if (mySensor.getStatus(&status) != 0) {
+      Serial.println("I2C error reading presence status");
+      return 0;
+    }
 
     // Require motion to corroborate presence detection.
     // The presence flag alone is prone to false positives from ambient
     // temperature drift, so we only trigger when motion is also detected.
     if (status.pres_flag == 1 && status.mot_flag == 1) {
       // Presence Units: cm^-1
-      mySensor.getPresenceValue(&presenceVal);
+      if (mySensor.getPresenceValue(&presenceVal) != 0) {
+        Serial.println("I2C error reading presence value");
+        return 0;
+      }
       Serial.print("Presence+Motion: ");
       Serial.print(presenceVal);
       Serial.println(" cm^-1");
