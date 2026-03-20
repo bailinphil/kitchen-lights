@@ -13,6 +13,13 @@
 #define IS_DISPLAY_ENABLED    true
 #define IS_FASTLED_ENABLED    true
 
+// The I2C bus is needed if any I2C device is enabled.
+#define IS_I2C_BUS_ENABLED (IS_DISPLAY_ENABLED || IS_TWIST_ENABLED || IS_PRESENCE_ENABLED || IS_AIR_SENSOR_ENABLED)
+
+#if IS_I2C_BUS_ENABLED
+#include <Wire.h>
+#endif
+
 /*
  * WiFi
  */
@@ -192,10 +199,6 @@ uint8_t twist_colors[][3] = {
 
 
 #if IS_DISPLAY_ENABLED
-// Wire.h is used to write to the 16x2 display which gives the user
-// information about what's going on with the lights, as well as
-// information about air quality in the room.
-#include <Wire.h>
 #define DISPLAY_ADDRESS1 0x72 //This is the default address of the OpenLCD
 // this buffer is used to create helpful debugging messages to send
 // over the serial interface.
@@ -273,7 +276,7 @@ SCD4x sen41;
 
 void setup() {
   Serial.begin(115200); // communication speed for debug messages
-#if IS_DISPLAY_ENABLED
+#if IS_I2C_BUS_ENABLED
   Wire.begin(); // Initialize I2C bus once, before any device setup
 #endif
 #if IS_FASTLED_ENABLED
