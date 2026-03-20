@@ -3,6 +3,8 @@
 #include "licenses.h"
 #include <Arduino.h>
 
+// The code in this file is provided under the MIT license.
+
 /*
  * Hardware Selection
  */
@@ -27,7 +29,6 @@
 #include <WiFi.h>
 #include <WiFiMulti.h>
 #include <HTTPClient.h>
-#define USE_SERIAL Serial
 WiFiMulti wifiMulti;
 #include "network_credentials.h"
 unsigned long millisWhenWeatherLastFetched = 0;
@@ -197,6 +198,7 @@ uint8_t twist_colors[][3] = {
 };
 #endif
 
+#define WEATHER_REPORT_MAX_LENGTH 10
 
 #if IS_DISPLAY_ENABLED
 #define DISPLAY_ADDRESS1 0x72 //This is the default address of the OpenLCD
@@ -205,8 +207,15 @@ uint8_t twist_colors[][3] = {
 String previousMessageTop = "";
 String messageTop = "";
 String messageBottom = "";
-String weatherReport[10];
 int currentWeatherReportDisplay = 1;
+unsigned long millisWhenBottomRowUpdated = 0;
+bool isDisplayDirty = true;
+unsigned long millisOfLastDisplayAttempt = 0;
+#define DISPLAY_RETRY_INTERVAL 2000  // wait 2s before retrying a failed write
+#endif // IS_DISPLAY_ENABLED
+
+#if IS_DISPLAY_ENABLED || IS_FASTLED_ENABLED || IS_WIFI_ENABLED
+String weatherReport[10];
 // Parsed from weatherReport[0] and the Sunrise/Sunset tokens.
 int currentTimeHours = -1;
 int currentTimeMinutes = -1;
@@ -214,12 +223,7 @@ int sunriseHours = -1;
 int sunriseMinutes = -1;
 int sunsetHours = -1;
 int sunsetMinutes = -1;
-unsigned long millisWhenBottomRowUpdated = 0;
-#define WEATHER_REPORT_MAX_LENGTH 10
-bool isDisplayDirty = true;
-unsigned long millisOfLastDisplayAttempt = 0;
-#define DISPLAY_RETRY_INTERVAL 2000  // wait 2s before retrying a failed write
-#endif // IS_DISPLAY_ENABLED
+#endif // DISPLAY or FASTLED
 
 /*
  * Presence
@@ -407,7 +411,7 @@ void setupParticulateSensor() {
     printModuleVersions();
 #endif // USE_PRODUCT_INFO
 
-    float tempOffset = 0.0; 
+    float tempOffset = 0.0;
     error = sen55.setTemperatureOffsetSimple(tempOffset);
     if (error) {
         Serial.print("Error trying to execute setTemperatureOffsetSimple(): ");
@@ -510,19 +514,26 @@ void printModuleVersions() {
  *                                                                           *
  ****************************************************************************/
 
-void loop()
-{
+void loop(){
+  delay(5);
+  bool is_air_report_just_sent = false;
 #if IS_AIR_SENSOR_ENABLED
   unsigned long millisSinceAirReport = millis() - millisWhenAirLastReported;
-  if (millisSinceAirReport > 120500) {
+  // get a new air report every every ~five minutes, but a prime number of millis
+  // so that we don't try to fetch a weather report and report the air quality
+  // on the same time through loop. 
+  if (millisSinceAirReport > 299993) {
     reportAirQuality();
+    is_air_report_just_sent = true;
     millisWhenAirLastReported = millis();
   }
 #endif // IS_AIR_SENSOR_ENABLED
 
 #if IS_WIFI_ENABLED
+  // updated weather info
   unsigned long millisSinceWeatherFetch = millis() - millisWhenWeatherLastFetched;
-  if (millisSinceWeatherFetch > 30000) {
+  // fetch weather every 30s (because it also updates the time seen on the display)
+  if ((false == is_air_report_just_sent) && millisSinceWeatherFetch > 30000) {
     fetchWeatherReport();
   }
 #endif // IS_WIFI_ENABLED
@@ -655,8 +666,6 @@ void loop()
     isLedDirty = false;
   }
 #endif // IS_FASTLED_ENABLED
-
-  delay(5);
 }
 
 
@@ -1206,6 +1215,7 @@ int applyPresenceFade(int brightness, unsigned long timeout) {
 // Returns the LED color Routine mode should use based on the current time
 // relative to sunrise and sunset. Falls back to the default Routine color
 // if time data hasn't been parsed yet.
+#if IS_FASTLED_ENABLED
 CRGB getRoutineColor() {
   if (currentTimeHours < 0 || sunriseHours < 0 || sunsetHours < 0) {
     return modeColor[ROUTINE_MODE_INDEX];
@@ -1214,7 +1224,7 @@ CRGB getRoutineColor() {
   int sunrise = sunriseHours     * 60 + sunriseMinutes;
   int sunset  = sunsetHours      * 60 + sunsetMinutes;
 
-  if(millis() % 5000 < 10) USE_SERIAL.printf("now: %d  | sunrise: %d |  sunset: %d\n", now, sunrise, sunset);
+  if(millis() % 5000 < 10) Serial.printf("now: %d  | sunrise: %d |  sunset: %d\n", now, sunrise, sunset);
 
 
   if (now < sunrise - 60)  return modeColor[NIGHT_MODE_INDEX];   // deep night
@@ -1224,6 +1234,7 @@ CRGB getRoutineColor() {
   if (now < sunset  + 60)  return modeColor[4];                  // Dishes — post-sunset
   return modeColor[NIGHT_MODE_INDEX];                            // night
 }
+#endif // IS_FASTLED_ENABLED
 
 #if IS_WIFI_ENABLED
 void fetchWeatherReport() {
@@ -1250,10 +1261,10 @@ void fetchWeatherReport() {
         Serial.print(millisWhenWeatherLastFetched);
         Serial.print(" - ");
         Serial.println(payload);
-        
+
       }
     } else {
-      USE_SERIAL.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
+      Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
     }
 
     http.end();
@@ -1414,10 +1425,16 @@ void sendAirReport(String airUrl) {
         Serial.println(payload);
       }
     } else {
-      USE_SERIAL.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
+      Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
     }
 
     http.end();
   }
 }
+#else
+// if the air sensor is enabled, but the wi-fi is not, we would like to pretend to send
+// an air report. This should compile, but does not need to do anything. See the beginning
+// of loop().
+inline void reportAirQuality(){}
 #endif // IS_AIR_SENSOR_ENABLED && IS_WIFI_ENABLED
+
