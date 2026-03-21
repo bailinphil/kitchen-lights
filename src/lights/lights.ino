@@ -612,14 +612,14 @@ void loop(){
     float twisted_position_in_window = (current_twist_position - twist_brightness_window_min) / (1.0 * kTwistBrightnessWindowSize);
     int requested_brightness = (int)(255 * twisted_position_in_window);
 
-#if IS_PRESENCE_ENABLED
+#if IS_PRESENCE_ENABLED && IS_FASTLED_ENABLED
     // Fade brightness based on presence detection.
     if (next_switch_position == NIGHT_MODE_INDEX) {
       requested_brightness = ApplyPresenceFade(requested_brightness);
     } else if (next_switch_position == ROUTINE_MODE_INDEX) {
       requested_brightness = ApplyPresenceFade(requested_brightness, kRoutinePresenceTimeoutMs);
     }
-#endif // IS_PRESENCE_ENABLED
+#endif // IS_PRESENCE_ENABLED && IS_FASTLED_ENABLED
 
 #if IS_FASTLED_ENABLED
     if(requested_brightness != previous_brightness){
