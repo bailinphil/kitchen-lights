@@ -29,13 +29,13 @@
 #include <WiFi.h>
 #include <WiFiMulti.h>
 #include <HTTPClient.h>
-WiFiMulti wifiMulti;
+WiFiMulti wifi_multi;
 #include "network_credentials.h"
-unsigned long millisWhenWeatherLastFetched = 0;
+unsigned long millis_when_weather_last_fetched = 0;
 #endif // IS_WIFI_ENABLED
 
 #if IS_AIR_SENSOR_ENABLED
-unsigned long millisWhenAirLastReported = 0;
+unsigned long millis_when_air_last_reported = 0;
 #endif // IS_AIR_SENSOR_ENABLED
 
 
@@ -57,7 +57,7 @@ unsigned long millisWhenAirLastReported = 0;
 #define UNDER_CAB_CORNER  25  // left wall cabinet 1
 #define UNDER_CAB_LEFT  25  // left wall cabinet 2
 #define NUM_LEDS_PIN25 (UNDER_CAB_RIGHT + OVER_SINK + UNDER_CAB_CORNER + UNDER_CAB_LEFT)
-CRGB ledsPin25[NUM_LEDS_PIN25];
+CRGB leds_pin25[NUM_LEDS_PIN25];
 
 // Ceiling run — two pins acting as one logical strip, left to right.
 // Pin 17: wired right-to-left (reversed in software).
@@ -66,20 +66,20 @@ CRGB ledsPin25[NUM_LEDS_PIN25];
 #define CEILING_RIGHT  50  // pin 16
 #define NUM_LEDS_PIN17 CEILING_LEFT
 #define NUM_LEDS_PIN16 CEILING_RIGHT
-CRGB ledsPin17[NUM_LEDS_PIN17];
-CRGB ledsPin16[NUM_LEDS_PIN16];
+CRGB leds_pin17[NUM_LEDS_PIN17];
+CRGB leds_pin16[NUM_LEDS_PIN16];
 
-CRGB previousColor;
-int previousBrightness;
-bool isLedDirty = true;
+CRGB previous_color;
+int previous_brightness;
+bool is_led_dirty = true;
 
 // Rainbow mode state
 #define RAINBOW_MODE_INDEX      7
 #define RAINBOW_PROPAGATION_MS  3000
-uint8_t rainbowHue = 0;
-bool    rainbowAutoCycle = true;
-unsigned long millisOfLastRainbowShift = 0;
-int     rainbowTwistBaseline = 0;
+uint8_t rainbow_hue = 0;
+bool    rainbow_auto_cycle = true;
+unsigned long millis_of_last_rainbow_shift = 0;
+int     rainbow_twist_baseline = 0;
 
 // Twinkle mode state
 #define TWINKLE_MODE_INDEX      8
@@ -94,22 +94,22 @@ struct TwinkleSpot {
   uint8_t strip;          // 0 = pin25, 1 = pin17, 2 = pin16
   uint8_t position;       // physical index into the strip's array
   uint8_t hue;
-  unsigned long birthMs;
+  unsigned long birth_ms;
   bool active;
 };
-TwinkleSpot twinkleSpots[TWINKLE_MAX_ACTIVE];
+TwinkleSpot twinkle_spots[TWINKLE_MAX_ACTIVE];
 
 // A small palette of complementary, fully-saturated hues.
 // Blues and greens only — avoids jarring hue clashes between neighbors.
 // HSV hues: ~80 (green) through ~170 (blue).
-const uint8_t twinklePalette[] = { 80, 96, 110, 128, 145, 160 };
+const uint8_t twinkle_palette[] = { 80, 96, 110, 128, 145, 160 };
 #define TWINKLE_PALETTE_SIZE 6
 
-uint8_t twinkleMonoHue = 0;
-bool    twinkleMonochrome = false;
-unsigned long millisBetweenTwinkleSpawns = TWINKLE_DEFAULT_SPAWN_MS;
-unsigned long millisOfLastTwinkleSpawn = 0;
-int     twinkleTwistBaseline = 0;
+uint8_t twinkle_mono_hue = 0;
+bool    twinkle_monochrome = false;
+unsigned long millis_between_twinkle_spawns = TWINKLE_DEFAULT_SPAWN_MS;
+unsigned long millis_of_last_twinkle_spawn = 0;
+int     twinkle_twist_baseline = 0;
 
 // Mode indices
 #define ROUTINE_MODE_INDEX  1
@@ -123,24 +123,24 @@ int     twinkleTwistBaseline = 0;
 #define FIRE_MAX_SPARKING   200   // most intense fire
 #define FIRE_FRAME_MS       15    // ms between simulation steps (~3x slower than loop)
 
-uint8_t heatPin25[NUM_LEDS_PIN25];
-uint8_t heatPin17[NUM_LEDS_PIN17];
-uint8_t heatPin16[NUM_LEDS_PIN16];
+uint8_t heat_pin25[NUM_LEDS_PIN25];
+uint8_t heat_pin17[NUM_LEDS_PIN17];
+uint8_t heat_pin16[NUM_LEDS_PIN16];
 
-uint8_t fireSparking = FIRE_SPARKING;
-bool    fireCoolPalette = false;  // false = warm (red/orange), true = cool (blue/purple)
-int     fireTwistBaseline = 0;
-unsigned long millisOfLastFireFrame = 0;
+uint8_t fire_sparking = FIRE_SPARKING;
+bool    fire_cool_palette = false;  // false = warm (red/orange), true = cool (blue/purple)
+int     fire_twist_baseline = 0;
+unsigned long millis_of_last_fire_frame = 0;
 #endif //IS_FASTLED_ENABLED
 
 /*
  * Mode Switching
  */
 #define MODE_SWITCH_PIN A5
-int candidateSwitchPosition = -1;
-int committedSwitchPosition = 0;
-unsigned long millisWhenCandidateChanged = 0;
-String modeName[] = {
+int candidate_switch_position = -1;
+int committed_switch_position = 0;
+unsigned long millis_when_candidate_changed = 0;
+String mode_name[] = {
   "Standby",
   "Routine",
   "Cook Day",
@@ -154,7 +154,7 @@ String modeName[] = {
 };
 
 #if IS_FASTLED_ENABLED
-CRGB modeColor[] = {
+CRGB mode_color[] = {
   CRGB::Black,       // Standby
   CRGB::White,       // Routine
   CRGB::Green,       // Cook Day
@@ -179,10 +179,10 @@ CRGB modeColor[] = {
 #include "SparkFun_Qwiic_Twist_Arduino_Library.h"
 TWIST twist;
 
-#define twistBrightnessWindowSize 20
-int twistBrightnessWindowCenter = 0;
-int twistBrightnessWindowMin = - (twistBrightnessWindowSize / 2);
-int twistBrightnessWindowMax = (twistBrightnessWindowSize / 2);
+constexpr int kTwistBrightnessWindowSize = 20;
+int twist_brightness_window_center = 0;
+int twist_brightness_window_min = - (kTwistBrightnessWindowSize / 2);
+int twist_brightness_window_max = (kTwistBrightnessWindowSize / 2);
 
 uint8_t twist_colors[][3] = {
   {  0,   0,   0},  // Standby
@@ -204,25 +204,25 @@ uint8_t twist_colors[][3] = {
 #define DISPLAY_ADDRESS1 0x72 //This is the default address of the OpenLCD
 // this buffer is used to create helpful debugging messages to send
 // over the serial interface.
-String previousMessageTop = "";
-String messageTop = "";
-String messageBottom = "";
-int currentWeatherReportDisplay = 1;
-unsigned long millisWhenBottomRowUpdated = 0;
-bool isDisplayDirty = true;
-unsigned long millisOfLastDisplayAttempt = 0;
+String previous_message_top = "";
+String message_top = "";
+String message_bottom = "";
+int current_weather_report_display = 1;
+unsigned long millis_when_bottom_row_updated = 0;
+bool is_display_dirty = true;
+unsigned long millis_of_last_display_attempt = 0;
 #define DISPLAY_RETRY_INTERVAL 2000  // wait 2s before retrying a failed write
 #endif // IS_DISPLAY_ENABLED
 
 #if IS_DISPLAY_ENABLED || IS_FASTLED_ENABLED || IS_WIFI_ENABLED
-String weatherReport[10];
-// Parsed from weatherReport[0] and the Sunrise/Sunset tokens.
-int currentTimeHours = -1;
-int currentTimeMinutes = -1;
-int sunriseHours = -1;
-int sunriseMinutes = -1;
-int sunsetHours = -1;
-int sunsetMinutes = -1;
+String weather_report[10];
+// Parsed from weather_report[0] and the Sunrise/Sunset tokens.
+int current_time_hours = -1;
+int current_time_minutes = -1;
+int sunrise_hours = -1;
+int sunrise_minutes = -1;
+int sunset_hours = -1;
+int sunset_minutes = -1;
 #endif // DISPLAY or FASTLED
 
 /*
@@ -230,20 +230,20 @@ int sunsetMinutes = -1;
  */
 #if IS_PRESENCE_ENABLED
 #include "SparkFun_STHS34PF80_Arduino_Library.h"
-STHS34PF80_I2C mySensor;
+STHS34PF80_I2C presence_sensor;
 
 // Values to fill with presence and motion data
-int16_t presenceVal = 0;
-int16_t motionVal = 0;
-float temperatureVal = 0;
-unsigned long millisOfLastPresenceDetection = 0;
-unsigned long millisOfLastPresenceCheck = 0;
-unsigned long millisOfPresenceFadeInStart = 0;
-#define millisPresenceTimeout        20000   // Night mode: 20 seconds
-#define millisRoutinePresenceTimeout 60000   // Routine mode: 1 minute
-#define millisFadeDuration 3000
-#define millisFadeInDuration 3000
-int applyPresenceFade(int brightness, unsigned long timeout = millisPresenceTimeout);
+int16_t presence_val = 0;
+int16_t motion_val = 0;
+float temperature_val = 0;
+unsigned long millis_of_last_presence_detection = 0;
+unsigned long millis_of_last_presence_check = 0;
+unsigned long millis_of_presence_fade_in_start = 0;
+constexpr unsigned long kPresenceTimeoutMs = 20000;        // Night mode: 20 seconds
+constexpr unsigned long kRoutinePresenceTimeoutMs = 60000;  // Routine mode: 1 minute
+constexpr unsigned long kFadeDurationMs = 3000;
+constexpr unsigned long kFadeInDurationMs = 3000;
+int ApplyPresenceFade(int brightness, unsigned long timeout = kPresenceTimeoutMs);
 #endif // IS_PRESENCE_ENABLED
 
 /*
@@ -284,46 +284,46 @@ void setup() {
   Wire.begin(); // Initialize I2C bus once, before any device setup
 #endif
 #if IS_FASTLED_ENABLED
-  setupLEDs();
+  SetupLeds();
 #endif
 #if IS_DISPLAY_ENABLED
-  setupDisplay();
+  SetupDisplay();
   delay(50);
 #endif
 #if IS_TWIST_ENABLED
-  setupTwist();
+  SetupTwist();
   delay(50);
 #endif
 #if IS_PRESENCE_ENABLED
-  setupPresence();
+  SetupPresence();
   delay(50);
 #endif
 #if IS_WIFI_ENABLED
-  setupWiFi();
+  SetupWifi();
 #endif
 #if IS_AIR_SENSOR_ENABLED
   delay(50);
-  setupCO2Sensor();
+  SetupCo2Sensor();
   delay(50);
-  setupParticulateSensor();
+  SetupParticulateSensor();
 #endif // IS_AIR_SENSOR_ENABLED
 }
 
 #if IS_FASTLED_ENABLED
-void setupLEDs() {
+void SetupLeds() {
   delay( 3000 ); // power-up safety delay
   // Use pins 25, 17, and 16 because they're adjacent to one another on my board, and
   // Pins 1 and 3 are the default Serial TX and RX pins. This was stomping on debugging.
-  FastLED.addLeds<CHIPSET, 25, COLOR_ORDER>(ledsPin25, NUM_LEDS_PIN25);  // under-cabinet
-  FastLED.addLeds<CHIPSET, 17, COLOR_ORDER>(ledsPin17, NUM_LEDS_PIN17);  // ceiling left
-  FastLED.addLeds<CHIPSET, 16, COLOR_ORDER>(ledsPin16, NUM_LEDS_PIN16);  // ceiling right
+  FastLED.addLeds<CHIPSET, 25, COLOR_ORDER>(leds_pin25, NUM_LEDS_PIN25);  // under-cabinet
+  FastLED.addLeds<CHIPSET, 17, COLOR_ORDER>(leds_pin17, NUM_LEDS_PIN17);  // ceiling left
+  FastLED.addLeds<CHIPSET, 16, COLOR_ORDER>(leds_pin16, NUM_LEDS_PIN16);  // ceiling right
   FastLED.setBrightness( BRIGHTNESS );
-  previousBrightness = BRIGHTNESS;
+  previous_brightness = BRIGHTNESS;
 }
 #endif // IS_FASTLED_ENABLED
 
 #if IS_DISPLAY_ENABLED
-void setupDisplay() {
+void SetupDisplay() {
   // Wire.begin() is called once in setup() before any device init.
   //Send the reset command to the display - this forces the cursor to return to the beginning of the display
   Wire.beginTransmission(DISPLAY_ADDRESS1);
@@ -334,32 +334,30 @@ void setupDisplay() {
   Wire.endTransmission();
 
   for (int i = 0; i < WEATHER_REPORT_MAX_LENGTH; ++i) {
-    weatherReport[i] = "";
+    weather_report[i] = "";
   }
 }
 #endif // IS_DISPLAY_ENABLED
 
 #if IS_TWIST_ENABLED
-void setupTwist() {
-  if (twist.begin() == false)
-  {
+void SetupTwist() {
+  if (twist.begin() == false) {
     Serial.println("Twist does not appear to be connected. Please check wiring. Freezing...");
     while (1);
   }
 
-  twistBrightnessWindowCenter = twist.getCount();
-  twistBrightnessWindowMin = twistBrightnessWindowCenter - (twistBrightnessWindowSize / 2);
-  twistBrightnessWindowMax = twistBrightnessWindowCenter + (twistBrightnessWindowSize / 2);
+  twist_brightness_window_center = twist.getCount();
+  twist_brightness_window_min = twist_brightness_window_center - (kTwistBrightnessWindowSize / 2);
+  twist_brightness_window_max = twist_brightness_window_center + (kTwistBrightnessWindowSize / 2);
   twist.setColor(100,10,0);
 }
 #endif
 
 #if IS_PRESENCE_ENABLED
 // https://github.com/sparkfun/SparkFun_STHS34PF80_Arduino_Library
-void setupPresence() {
+void SetupPresence() {
     // Establish communication with device
-    if (mySensor.begin() == false)
-    {
+    if (presence_sensor.begin() == false) {
       Serial.println("Error setting up device - please check wiring.");
       while(1);
     }
@@ -367,37 +365,36 @@ void setupPresence() {
 #endif
 
 #if IS_WIFI_ENABLED
-void setupWiFi() {
-  wifiMulti.addAP(STA_SSID_HOME, STA_PASS_HOME);
-  wifiMulti.addAP(STA_SSID_WORK, STA_PASS_WORK);
-  wifiMulti.addAP(STA_SSID_PHONE, STA_PASS_PHONE);
-  wifiMulti.addAP(STA_SSID_PROTO, STA_PASS_PROTO);
-  millisWhenWeatherLastFetched = millis();
+void SetupWifi() {
+  wifi_multi.addAP(STA_SSID_HOME, STA_PASS_HOME);
+  wifi_multi.addAP(STA_SSID_WORK, STA_PASS_WORK);
+  wifi_multi.addAP(STA_SSID_PHONE, STA_PASS_PHONE);
+  wifi_multi.addAP(STA_SSID_PROTO, STA_PASS_PROTO);
+  millis_when_weather_last_fetched = millis();
 }
 #endif // IS_WIFI_ENABLED
 
 #if IS_AIR_SENSOR_ENABLED
-void setupCO2Sensor() {
+void SetupCo2Sensor() {
   //sen41.enableDebugging(); // Uncomment this line to get helpful debug messages on Serial
 
   //.begin will start periodic measurements for us (see the later examples for details on how to override this)
-  if (sen41.begin() == false)
-  {
+  if (sen41.begin() == false) {
     Serial.println(F("Sensor not detected. Please check wiring. Freezing..."));
     while (1);
   }
 }
 
-void setupParticulateSensor() {
+void SetupParticulateSensor() {
     sen55.begin(Wire);
 
     uint16_t error;
-    char errorMessage[256];
+    char error_message[256];
     error = sen55.deviceReset();
     if (error) {
         Serial.print("Error trying to execute deviceReset(): ");
-        errorToString(error, errorMessage, 256);
-        Serial.println(errorMessage);
+        errorToString(error, error_message, 256);
+        Serial.println(error_message);
     }
 
     // The SEN55 needs time to boot after a reset before it will
@@ -407,19 +404,19 @@ void setupParticulateSensor() {
 
 // Print SEN55 module information if i2c buffers are large enough
 #ifdef USE_PRODUCT_INFO
-    printSerialNumber();
-    printModuleVersions();
+    PrintSerialNumber();
+    PrintModuleVersions();
 #endif // USE_PRODUCT_INFO
 
-    float tempOffset = 0.0;
-    error = sen55.setTemperatureOffsetSimple(tempOffset);
+    float temp_offset = 0.0;
+    error = sen55.setTemperatureOffsetSimple(temp_offset);
     if (error) {
         Serial.print("Error trying to execute setTemperatureOffsetSimple(): ");
-        errorToString(error, errorMessage, 256);
-        Serial.println(errorMessage);
+        errorToString(error, error_message, 256);
+        Serial.println(error_message);
     } else {
         Serial.print("Temperature Offset set to ");
-        Serial.print(tempOffset);
+        Serial.print(temp_offset);
         Serial.println(" deg. Celsius (SEN54/SEN55 only");
     }
 
@@ -427,72 +424,72 @@ void setupParticulateSensor() {
     error = sen55.startMeasurement();
     if (error) {
         Serial.print("Error trying to execute startMeasurement(): ");
-        errorToString(error, errorMessage, 256);
-        Serial.println(errorMessage);
+        errorToString(error, error_message, 256);
+        Serial.println(error_message);
     }
 }
 
-void printSerialNumber() {
+void PrintSerialNumber() {
     uint16_t error;
-    char errorMessage[256];
+    char error_message[256];
     unsigned char serialNumber[32];
-    uint8_t serialNumberSize = 32;
+    uint8_t serial_number_size = 32;
 
-    error = sen55.getSerialNumber(serialNumber, serialNumberSize);
+    error = sen55.getSerialNumber(serialNumber, serial_number_size);
     if (error) {
         Serial.print("Error trying to execute getSerialNumber(): ");
-        errorToString(error, errorMessage, 256);
-        Serial.println(errorMessage);
+        errorToString(error, error_message, 256);
+        Serial.println(error_message);
     } else {
         Serial.print("SerialNumber:");
         Serial.println((char*)serialNumber);
     }
 }
 
-void printModuleVersions() {
+void PrintModuleVersions() {
     uint16_t error;
-    char errorMessage[256];
+    char error_message[256];
 
     unsigned char productName[32];
-    uint8_t productNameSize = 32;
+    uint8_t product_name_size = 32;
 
-    error = sen55.getProductName(productName, productNameSize);
+    error = sen55.getProductName(productName, product_name_size);
 
     if (error) {
         Serial.print("Error trying to execute getProductName(): ");
-        errorToString(error, errorMessage, 256);
-        Serial.println(errorMessage);
+        errorToString(error, error_message, 256);
+        Serial.println(error_message);
     } else {
         Serial.print("ProductName:");
         Serial.println((char*)productName);
     }
 
-    uint8_t firmwareMajor;
-    uint8_t firmwareMinor;
-    bool firmwareDebug;
-    uint8_t hardwareMajor;
-    uint8_t hardwareMinor;
-    uint8_t protocolMajor;
-    uint8_t protocolMinor;
+    uint8_t firmware_major;
+    uint8_t firmware_minor;
+    bool firmware_debug;
+    uint8_t hardware_major;
+    uint8_t hardware_minor;
+    uint8_t protocol_major;
+    uint8_t protocol_minor;
 
-    error = sen55.getVersion(firmwareMajor, firmwareMinor, firmwareDebug,
-                             hardwareMajor, hardwareMinor, protocolMajor,
-                             protocolMinor);
+    error = sen55.getVersion(firmware_major, firmware_minor, firmware_debug,
+                             hardware_major, hardware_minor, protocol_major,
+                             protocol_minor);
     if (error) {
         Serial.print("Error trying to execute getVersion(): ");
-        errorToString(error, errorMessage, 256);
-        Serial.println(errorMessage);
+        errorToString(error, error_message, 256);
+        Serial.println(error_message);
     } else {
         Serial.print("Firmware: ");
-        Serial.print(firmwareMajor);
+        Serial.print(firmware_major);
         Serial.print(".");
-        Serial.print(firmwareMinor);
+        Serial.print(firmware_minor);
         Serial.print(", ");
 
         Serial.print("Hardware: ");
-        Serial.print(hardwareMajor);
+        Serial.print(hardware_major);
         Serial.print(".");
-        Serial.println(hardwareMinor);
+        Serial.println(hardware_minor);
     }
 }
 
@@ -518,152 +515,152 @@ void loop(){
   delay(5);
   bool is_air_report_just_sent = false;
 #if IS_AIR_SENSOR_ENABLED
-  unsigned long millisSinceAirReport = millis() - millisWhenAirLastReported;
+  unsigned long millis_since_air_report = millis() - millis_when_air_last_reported;
   // get a new air report every every ~five minutes, but a prime number of millis
   // so that we don't try to fetch a weather report and report the air quality
   // on the same time through loop. 
-  if (millisSinceAirReport > 299993) {
-    reportAirQuality();
+  if (millis_since_air_report > 299993) {
+    ReportAirQuality();
     is_air_report_just_sent = true;
-    millisWhenAirLastReported = millis();
+    millis_when_air_last_reported = millis();
   }
 #endif // IS_AIR_SENSOR_ENABLED
 
 #if IS_WIFI_ENABLED
   // updated weather info
-  unsigned long millisSinceWeatherFetch = millis() - millisWhenWeatherLastFetched;
+  unsigned long millis_since_weather_fetch = millis() - millis_when_weather_last_fetched;
   // fetch weather every 30s (because it also updates the time seen on the display)
-  if ((false == is_air_report_just_sent) && millisSinceWeatherFetch > 30000) {
-    fetchWeatherReport();
+  if ((false == is_air_report_just_sent) && millis_since_weather_fetch > 30000) {
+    FetchWeatherReport();
   }
 #endif // IS_WIFI_ENABLED
 
 #if IS_TWIST_ENABLED
   if (twist.isClicked()) {
 #if IS_FASTLED_ENABLED
-    if (committedSwitchPosition == FIRE_MODE_INDEX) {
+    if (committed_switch_position == FIRE_MODE_INDEX) {
       // In Fire mode, the button toggles warm/cool palette.
-      fireCoolPalette = !fireCoolPalette;
-    } else if (committedSwitchPosition == RAINBOW_MODE_INDEX) {
+      fire_cool_palette = !fire_cool_palette;
+    } else if (committed_switch_position == RAINBOW_MODE_INDEX) {
       // In Rainbow mode, the button toggles auto-cycle on/off.
-      rainbowAutoCycle = !rainbowAutoCycle;
-    } else if (committedSwitchPosition == TWINKLE_MODE_INDEX) {
+      rainbow_auto_cycle = !rainbow_auto_cycle;
+    } else if (committed_switch_position == TWINKLE_MODE_INDEX) {
       // In Twinkle mode, the button toggles monochrome on/off.
-      twinkleMonochrome = !twinkleMonochrome;
-      if (twinkleMonochrome) {
+      twinkle_monochrome = !twinkle_monochrome;
+      if (twinkle_monochrome) {
         // Latch the most recently used palette hue.
-        twinkleMonoHue = twinklePalette[random(TWINKLE_PALETTE_SIZE)];
+        twinkle_mono_hue = twinkle_palette[random(TWINKLE_PALETTE_SIZE)];
       }
     } else
 #endif // IS_FASTLED_ENABLED
     {
-      twistBrightnessWindowCenter = twist.getCount();
-      twistBrightnessWindowMin = twist.getCount() - twistBrightnessWindowSize;
-      twistBrightnessWindowMax = twist.getCount() + twistBrightnessWindowSize;
+      twist_brightness_window_center = twist.getCount();
+      twist_brightness_window_min = twist.getCount() - kTwistBrightnessWindowSize;
+      twist_brightness_window_max = twist.getCount() + kTwistBrightnessWindowSize;
     }
   }
 #endif
 
   // figure out what position the switch is in, while ignoring noise
-  int nextSwitchPosition = getDebouncedSwitchPosition();
+  int next_switch_position = GetDebouncedSwitchPosition();
 
 #if IS_PRESENCE_ENABLED
   delay(1); // brief gap between I2C devices to reduce bus contention
-  int detectedPresence = 0;
-  if (millis() - millisOfLastPresenceCheck > 150) {
-    millisOfLastPresenceCheck = millis();
-    detectedPresence = checkPresence();
+  int detected_presence = 0;
+  if (millis() - millis_of_last_presence_check > 150) {
+    millis_of_last_presence_check = millis();
+    detected_presence = CheckPresence();
   }
-  if (detectedPresence != 0) {
+  if (detected_presence != 0) {
     // If lights were off or fading out, start a fade-in.
-    unsigned long millisSincePresence = millis() - millisOfLastPresenceDetection;
-    if (millisSincePresence > millisPresenceTimeout) {
-      millisOfPresenceFadeInStart = millis();
+    unsigned long millis_since_presence = millis() - millis_of_last_presence_detection;
+    if (millis_since_presence > kPresenceTimeoutMs) {
+      millis_of_presence_fade_in_start = millis();
     }
-    millisOfLastPresenceDetection = millis();
+    millis_of_last_presence_detection = millis();
   }
 #endif
 
 #if IS_TWIST_ENABLED
   delay(1); // brief gap between I2C devices to reduce bus contention
-  int currentTwistPosition = twist.getCount();
+  int current_twist_position = twist.getCount();
 
 #if IS_FASTLED_ENABLED
-  if (nextSwitchPosition == FIRE_MODE_INDEX) {
+  if (next_switch_position == FIRE_MODE_INDEX) {
     // In Fire mode the twist controls sparking intensity.
-    int twistDelta = currentTwistPosition - fireTwistBaseline;
-    int newSparking = (int)fireSparking + (twistDelta * 5);
-    fireSparking = constrain(newSparking, FIRE_MIN_SPARKING, FIRE_MAX_SPARKING);
-    fireTwistBaseline = currentTwistPosition;
-  } else if (nextSwitchPosition == RAINBOW_MODE_INDEX) {
+    int twist_delta = current_twist_position - fire_twist_baseline;
+    int new_sparking = (int)fire_sparking + (twist_delta * 5);
+    fire_sparking = constrain(new_sparking, FIRE_MIN_SPARKING, FIRE_MAX_SPARKING);
+    fire_twist_baseline = current_twist_position;
+  } else if (next_switch_position == RAINBOW_MODE_INDEX) {
     // In Rainbow mode the twist controls hue, not brightness.
-    int twistDelta = currentTwistPosition - rainbowTwistBaseline;
-    rainbowHue += (uint8_t)twistDelta;  // wraps naturally
-    rainbowTwistBaseline = currentTwistPosition;
-  } else if (nextSwitchPosition == TWINKLE_MODE_INDEX) {
+    int twist_delta = current_twist_position - rainbow_twist_baseline;
+    rainbow_hue += (uint8_t)twist_delta;  // wraps naturally
+    rainbow_twist_baseline = current_twist_position;
+  } else if (next_switch_position == TWINKLE_MODE_INDEX) {
     // In Twinkle mode the twist controls spawn rate.
-    int twistDelta = currentTwistPosition - twinkleTwistBaseline;
+    int twist_delta = current_twist_position - twinkle_twist_baseline;
     // Each tick adjusts spawn interval by ~10ms.
-    int newInterval = (int)millisBetweenTwinkleSpawns - (twistDelta * 10);
-    millisBetweenTwinkleSpawns = constrain(newInterval, TWINKLE_MIN_SPAWN_MS, TWINKLE_MAX_SPAWN_MS);
-    twinkleTwistBaseline = currentTwistPosition;
+    int new_interval = (int)millis_between_twinkle_spawns - (twist_delta * 10);
+    millis_between_twinkle_spawns = constrain(new_interval, TWINKLE_MIN_SPAWN_MS, TWINKLE_MAX_SPAWN_MS);
+    twinkle_twist_baseline = current_twist_position;
   } else
 #endif // IS_FASTLED_ENABLED
   {
     // Normal modes: twist controls brightness.
-    clampTwistWindow(currentTwistPosition);
-    float twistedPositionInWindow = (currentTwistPosition - twistBrightnessWindowMin) / (1.0 * twistBrightnessWindowSize);
-    int requestedBrightness = (int)(255 * twistedPositionInWindow);
+    ClampTwistWindow(current_twist_position);
+    float twisted_position_in_window = (current_twist_position - twist_brightness_window_min) / (1.0 * kTwistBrightnessWindowSize);
+    int requested_brightness = (int)(255 * twisted_position_in_window);
 
 #if IS_PRESENCE_ENABLED
     // Fade brightness based on presence detection.
-    if (nextSwitchPosition == NIGHT_MODE_INDEX) {
-      requestedBrightness = applyPresenceFade(requestedBrightness);
-    } else if (nextSwitchPosition == ROUTINE_MODE_INDEX) {
-      requestedBrightness = applyPresenceFade(requestedBrightness, millisRoutinePresenceTimeout);
+    if (next_switch_position == NIGHT_MODE_INDEX) {
+      requested_brightness = ApplyPresenceFade(requested_brightness);
+    } else if (next_switch_position == ROUTINE_MODE_INDEX) {
+      requested_brightness = ApplyPresenceFade(requested_brightness, kRoutinePresenceTimeoutMs);
     }
 #endif // IS_PRESENCE_ENABLED
 
 #if IS_FASTLED_ENABLED
-    if(requestedBrightness != previousBrightness){
-      FastLED.setBrightness(requestedBrightness);
-      previousBrightness = requestedBrightness;
-      isLedDirty = true;
+    if(requested_brightness != previous_brightness){
+      FastLED.setBrightness(requested_brightness);
+      previous_brightness = requested_brightness;
+      is_led_dirty = true;
     }
 #endif // IS_FASTLED_ENABLED
   }
-  uint8_t* tc = twist_colors[nextSwitchPosition];
+  uint8_t* tc = twist_colors[next_switch_position];
   twist.setColor(tc[0],tc[1],tc[2]);
 #endif // IS_TWIST_ENABLED
 
 #if IS_DISPLAY_ENABLED
-  messageTop = prepareTopMessage(nextSwitchPosition);
-  messageBottom = prepareBottomMessage();
-  if (isDisplayDirty && millis() - millisOfLastDisplayAttempt > DISPLAY_RETRY_INTERVAL) {
-    millisOfLastDisplayAttempt = millis();
-    updateDisplay(messageTop, messageBottom);
+  message_top = PrepareTopMessage(next_switch_position);
+  message_bottom = PrepareBottomMessage();
+  if (is_display_dirty && millis() - millis_of_last_display_attempt > DISPLAY_RETRY_INTERVAL) {
+    millis_of_last_display_attempt = millis();
+    UpdateDisplay(message_top, message_bottom);
   }
 #endif // IS_DISPLAY_ENABLED
 
 #if IS_FASTLED_ENABLED
-  if (nextSwitchPosition == FIRE_MODE_INDEX) {
-    updateFire();
-  } else if (nextSwitchPosition == RAINBOW_MODE_INDEX) {
-    updateRainbow();
-  } else if (nextSwitchPosition == TWINKLE_MODE_INDEX) {
-    updateTwinkle();
-  } else if (nextSwitchPosition == ROUTINE_MODE_INDEX) {
-    CRGB routineColor = getRoutineColor();
-    if (isLedDirty || routineColor != previousColor) {
-      setAllLEDs(routineColor);
+  if (next_switch_position == FIRE_MODE_INDEX) {
+    UpdateFire();
+  } else if (next_switch_position == RAINBOW_MODE_INDEX) {
+    UpdateRainbow();
+  } else if (next_switch_position == TWINKLE_MODE_INDEX) {
+    UpdateTwinkle();
+  } else if (next_switch_position == ROUTINE_MODE_INDEX) {
+    CRGB routine_color = GetRoutineColor();
+    if (is_led_dirty || routine_color != previous_color) {
+      SetAllLeds(routine_color);
       FastLED.show();
-      previousColor = routineColor;
-      isLedDirty = false;
+      previous_color = routine_color;
+      is_led_dirty = false;
     }
-  } else if (isLedDirty) {
-    setAllLEDs(modeColor[nextSwitchPosition]);
+  } else if (is_led_dirty) {
+    SetAllLeds(mode_color[next_switch_position]);
     FastLED.show();
-    isLedDirty = false;
+    is_led_dirty = false;
   }
 #endif // IS_FASTLED_ENABLED
 }
@@ -675,42 +672,42 @@ void loop(){
  *                                                                           *
  ****************************************************************************/
 #if IS_DISPLAY_ENABLED
-String prepareTopMessage(uint8_t switchPos) {
-  String result = weatherReport[0] + " " + modeName[switchPos];
-  if (!result.equals(previousMessageTop)) {
-    isDisplayDirty = true;
-    previousMessageTop = result;
+String PrepareTopMessage(uint8_t switch_pos) {
+  String result = weather_report[0] + " " + mode_name[switch_pos];
+  if (!result.equals(previous_message_top)) {
+    is_display_dirty = true;
+    previous_message_top = result;
   }
   return result;
 }
 
-String prepareBottomMessage() {
-  if (currentWeatherReportDisplay >= WEATHER_REPORT_MAX_LENGTH ||
-      weatherReport[currentWeatherReportDisplay].length() == 0) {
-    currentWeatherReportDisplay = 1;
+String PrepareBottomMessage() {
+  if (current_weather_report_display >= WEATHER_REPORT_MAX_LENGTH ||
+      weather_report[current_weather_report_display].length() == 0) {
+    current_weather_report_display = 1;
   }
-  String result = weatherReport[currentWeatherReportDisplay];
-  if (millis() - millisWhenBottomRowUpdated > 3000) {
-    millisWhenBottomRowUpdated = millis();
-    currentWeatherReportDisplay += 1;
-    isDisplayDirty = true;
+  String result = weather_report[current_weather_report_display];
+  if (millis() - millis_when_bottom_row_updated > 3000) {
+    millis_when_bottom_row_updated = millis();
+    current_weather_report_display += 1;
+    is_display_dirty = true;
   }
   return result;
 }
 
-void updateDisplay(String messageTop, String messageBottom) {
-  Serial.println(messageTop);
-  Serial.println(messageBottom);
+void UpdateDisplay(String message_top, String message_bottom) {
+  Serial.println(message_top);
+  Serial.println(message_bottom);
 
   // Send the clear command in its own transaction — the OpenLCD needs
   // ~10ms to execute it before it can accept new characters.
   Wire.beginTransmission(DISPLAY_ADDRESS1);
   Wire.write('|'); //Put LCD into setting mode
   Wire.write('-'); //Send clear display command
-  uint8_t clearError = Wire.endTransmission();
-  if (clearError != 0) {
+  uint8_t clear_error = Wire.endTransmission();
+  if (clear_error != 0) {
     Serial.print("I2C error clearing display: ");
-    Serial.println(clearError);
+    Serial.println(clear_error);
     return;
   }
 
@@ -718,20 +715,20 @@ void updateDisplay(String messageTop, String messageBottom) {
 
   // Now send the actual content.
   Wire.beginTransmission(DISPLAY_ADDRESS1);
-  Wire.print(messageTop);
-  unsigned int charsPrinted = messageTop.length();
-  while (charsPrinted < 16) {
+  Wire.print(message_top);
+  unsigned int chars_printed = message_top.length();
+  while (chars_printed < 16) {
     Wire.print(" ");
-    charsPrinted++;
+    chars_printed++;
   }
-  Wire.print(messageBottom);
+  Wire.print(message_bottom);
 
-  uint8_t i2cError = Wire.endTransmission(); //Stop I2C transmission
-  if (i2cError != 0) {
+  uint8_t i2c_error = Wire.endTransmission(); //Stop I2C transmission
+  if (i2c_error != 0) {
     Serial.print("I2C error on display: ");
-    Serial.println(i2cError);
+    Serial.println(i2c_error);
   } else {
-    isDisplayDirty = false;
+    is_display_dirty = false;
   }
   Serial.println("--------------");
 }
@@ -747,9 +744,9 @@ void updateDisplay(String messageTop, String messageBottom) {
 // Fill the under-cabinet strip (pin 25).
 // The strip is wired right-to-left, so we reverse the index so that
 // logical position 0 corresponds to the leftmost LED (section D).
-void setUnderCabinetLEDs(CRGB color) {
+void SetUnderCabinetLeds(CRGB color) {
   for (int i = 0; i < NUM_LEDS_PIN25; i++) {
-    ledsPin25[NUM_LEDS_PIN25 - 1 - i] = color;
+    leds_pin25[NUM_LEDS_PIN25 - 1 - i] = color;
   }
 }
 
@@ -757,64 +754,64 @@ void setUnderCabinetLEDs(CRGB color) {
 // Pin 17 is wired right-to-left (reversed here), then pin 16 continues
 // left-to-right (natural order), so an animation starting at logical
 // position 0 flows seamlessly from pin 17 into pin 16.
-void setCeilingLEDs(CRGB color) {
+void SetCeilingLeds(CRGB color) {
   for (int i = 0; i < NUM_LEDS_PIN17; i++) {
-    ledsPin17[NUM_LEDS_PIN17 - 1 - i] = color;
+    leds_pin17[NUM_LEDS_PIN17 - 1 - i] = color;
   }
   for (int i = 0; i < NUM_LEDS_PIN16; i++) {
-    ledsPin16[i] = color;
+    leds_pin16[i] = color;
   }
 }
 
 // Fill every LED on every strip with the same color.
-void setAllLEDs(CRGB color) {
-  setUnderCabinetLEDs(color);
-  setCeilingLEDs(color);
+void SetAllLeds(CRGB color) {
+  SetUnderCabinetLeds(color);
+  SetCeilingLeds(color);
 }
 
 // Shift the under-cabinet strip one position to the right (logically,
 // left-to-right) and inject a new color at the leftmost end.
 // Physical wiring is right-to-left, so leftmost = highest index.
-void shiftUnderCabinetRight(CRGB newColor) {
+void ShiftUnderCabinetRight(CRGB new_color) {
   for (int i = 0; i < NUM_LEDS_PIN25 - 1; i++) {
-    ledsPin25[i] = ledsPin25[i + 1];
+    leds_pin25[i] = leds_pin25[i + 1];
   }
-  ledsPin25[NUM_LEDS_PIN25 - 1] = newColor;
+  leds_pin25[NUM_LEDS_PIN25 - 1] = new_color;
 }
 
 // Shift the ceiling strips one position to the right (logically) and
 // inject a new color at the leftmost end.  Pin 17 (reversed wiring)
 // feeds into pin 16 (natural wiring) so the animation crosses over.
-void shiftCeilingRight(CRGB newColor) {
+void ShiftCeilingRight(CRGB new_color) {
   // Shift pin 16 right (natural order, increasing index)
   for (int i = NUM_LEDS_PIN16 - 1; i > 0; i--) {
-    ledsPin16[i] = ledsPin16[i - 1];
+    leds_pin16[i] = leds_pin16[i - 1];
   }
   // Crossover: pin 17 rightmost logical (physical index 0) → pin 16 leftmost
-  ledsPin16[0] = ledsPin17[0];
+  leds_pin16[0] = leds_pin17[0];
   // Shift pin 17 right in logical order (decreasing physical index)
   for (int i = 0; i < NUM_LEDS_PIN17 - 1; i++) {
-    ledsPin17[i] = ledsPin17[i + 1];
+    leds_pin17[i] = leds_pin17[i + 1];
   }
   // Inject at pin 17 leftmost logical (physical index N-1)
-  ledsPin17[NUM_LEDS_PIN17 - 1] = newColor;
+  leds_pin17[NUM_LEDS_PIN17 - 1] = new_color;
 }
 
 // Rainbow animation: shift all strips and inject the current hue.
 // Called every loop() iteration when in Rainbow mode; the shift only
 // happens when enough time has elapsed for one propagation step.
-void updateRainbow() {
+void UpdateRainbow() {
   unsigned long now = millis();
-  int longestRun = max((int)NUM_LEDS_PIN25, (int)(NUM_LEDS_PIN17 + NUM_LEDS_PIN16));
-  unsigned long shiftInterval = RAINBOW_PROPAGATION_MS / longestRun;
+  int longest_run = max((int)NUM_LEDS_PIN25, (int)(NUM_LEDS_PIN17 + NUM_LEDS_PIN16));
+  unsigned long shift_interval = RAINBOW_PROPAGATION_MS / longest_run;
 
-  if (now - millisOfLastRainbowShift >= shiftInterval) {
-    millisOfLastRainbowShift = now;
-    CRGB color = CHSV(rainbowHue, 255, 255);
-    shiftUnderCabinetRight(color);
-    shiftCeilingRight(color);
-    if (rainbowAutoCycle) {
-      rainbowHue++;  // wraps naturally at 256 → 0
+  if (now - millis_of_last_rainbow_shift >= shift_interval) {
+    millis_of_last_rainbow_shift = now;
+    CRGB color = CHSV(rainbow_hue, 255, 255);
+    ShiftUnderCabinetRight(color);
+    ShiftCeilingRight(color);
+    if (rainbow_auto_cycle) {
+      rainbow_hue++;  // wraps naturally at 256 → 0
     }
     FastLED.show();
   }
@@ -823,22 +820,22 @@ void updateRainbow() {
 // --- Twinkle helpers ---
 
 // Write a color to a physical LED position, clamping to strip bounds.
-void setStripPixel(uint8_t strip, int pos, CRGB color) {
+void SetStripPixel(uint8_t strip, int pos, CRGB color) {
   switch (strip) {
     case 0:
-      if (pos >= 0 && pos < NUM_LEDS_PIN25) ledsPin25[pos] = color;
+      if (pos >= 0 && pos < NUM_LEDS_PIN25) leds_pin25[pos] = color;
       break;
     case 1:
-      if (pos >= 0 && pos < NUM_LEDS_PIN17) ledsPin17[pos] = color;
+      if (pos >= 0 && pos < NUM_LEDS_PIN17) leds_pin17[pos] = color;
       break;
     case 2:
-      if (pos >= 0 && pos < NUM_LEDS_PIN16) ledsPin16[pos] = color;
+      if (pos >= 0 && pos < NUM_LEDS_PIN16) leds_pin16[pos] = color;
       break;
   }
 }
 
 // Return the length of a strip by index.
-int stripLength(uint8_t strip) {
+int StripLength(uint8_t strip) {
   switch (strip) {
     case 0: return NUM_LEDS_PIN25;
     case 1: return NUM_LEDS_PIN17;
@@ -849,16 +846,16 @@ int stripLength(uint8_t strip) {
 
 // Check whether a candidate position on a strip is too close to an
 // active spot that still has significant lifetime remaining.
-bool isTooCloseToActiveSpot(uint8_t strip, uint8_t pos) {
+bool IsTooCloseToActiveSpot(uint8_t strip, uint8_t pos) {
   unsigned long now = millis();
   for (int i = 0; i < TWINKLE_MAX_ACTIVE; i++) {
-    if (!twinkleSpots[i].active) continue;
-    if (twinkleSpots[i].strip != strip) continue;
+    if (!twinkle_spots[i].active) continue;
+    if (twinkle_spots[i].strip != strip) continue;
     // "Significant time left" = less than halfway through its lifetime.
-    unsigned long age = now - twinkleSpots[i].birthMs;
+    unsigned long age = now - twinkle_spots[i].birth_ms;
     if (age > TWINKLE_SPOT_LIFETIME / 2) continue;
     // Too close if within ±2 of an active bright spot.
-    int dist = abs((int)pos - (int)twinkleSpots[i].position);
+    int dist = abs((int)pos - (int)twinkle_spots[i].position);
     if (dist <= 2) return true;
   }
   return false;
@@ -868,32 +865,32 @@ bool isTooCloseToActiveSpot(uint8_t strip, uint8_t pos) {
 // Tries a few random positions to avoid landing on or next to a
 // still-bright spot; gives up after a handful of attempts.
 #define TWINKLE_SPAWN_ATTEMPTS 5
-void spawnTwinkleSpot() {
+void SpawnTwinkleSpot() {
   for (int i = 0; i < TWINKLE_MAX_ACTIVE; i++) {
-    if (!twinkleSpots[i].active) {
+    if (!twinkle_spots[i].active) {
       uint8_t strip = random(3);
-      uint8_t pos = random(stripLength(strip));
+      uint8_t pos = random(StripLength(strip));
 
       // Try to find a position that isn't crowded.
       for (int attempt = 0; attempt < TWINKLE_SPAWN_ATTEMPTS; attempt++) {
-        if (!isTooCloseToActiveSpot(strip, pos)) break;
+        if (!IsTooCloseToActiveSpot(strip, pos)) break;
         strip = random(3);
-        pos = random(stripLength(strip));
+        pos = random(StripLength(strip));
       }
       // If we still collide after all attempts, spawn anyway — it's
       // better than visibly dropping spawns.
 
-      twinkleSpots[i].strip = strip;
-      twinkleSpots[i].position = pos;
-      if (twinkleMonochrome) {
-        twinkleSpots[i].hue = twinkleMonoHue;
+      twinkle_spots[i].strip = strip;
+      twinkle_spots[i].position = pos;
+      if (twinkle_monochrome) {
+        twinkle_spots[i].hue = twinkle_mono_hue;
       } else {
-        uint8_t paletteIndex = random(TWINKLE_PALETTE_SIZE);
-        twinkleSpots[i].hue = twinklePalette[paletteIndex];
-        twinkleMonoHue = twinklePalette[paletteIndex];  // latch for mono toggle
+        uint8_t palette_index = random(TWINKLE_PALETTE_SIZE);
+        twinkle_spots[i].hue = twinkle_palette[palette_index];
+        twinkle_mono_hue = twinkle_palette[palette_index];  // latch for mono toggle
       }
-      twinkleSpots[i].birthMs = millis();
-      twinkleSpots[i].active = true;
+      twinkle_spots[i].birth_ms = millis();
+      twinkle_spots[i].active = true;
       return;
     }
   }
@@ -901,14 +898,14 @@ void spawnTwinkleSpot() {
 }
 
 // Refresh active twinkle spots: fade in over lifetime, spread to neighbors.
-void updateTwinkleSpots() {
+void UpdateTwinkleSpots() {
   unsigned long now = millis();
   for (int i = 0; i < TWINKLE_MAX_ACTIVE; i++) {
-    if (!twinkleSpots[i].active) continue;
+    if (!twinkle_spots[i].active) continue;
 
-    unsigned long age = now - twinkleSpots[i].birthMs;
+    unsigned long age = now - twinkle_spots[i].birth_ms;
     if (age > TWINKLE_SPOT_LIFETIME) {
-      twinkleSpots[i].active = false;
+      twinkle_spots[i].active = false;
       continue;
     }
 
@@ -921,36 +918,36 @@ void updateTwinkleSpots() {
       brightness = 255;  // hold
     }
 
-    CRGB color = CHSV(twinkleSpots[i].hue, 255, brightness);
-    uint8_t s = twinkleSpots[i].strip;
-    int p = twinkleSpots[i].position;
+    CRGB color = CHSV(twinkle_spots[i].hue, 255, brightness);
+    uint8_t s = twinkle_spots[i].strip;
+    int p = twinkle_spots[i].position;
 
     // Center pixel at full computed brightness.
-    setStripPixel(s, p, color);
+    SetStripPixel(s, p, color);
 
     // Neighbors at half brightness for a gentle spread.
-    CRGB neighborColor = CHSV(twinkleSpots[i].hue, 255, brightness / 2);
-    setStripPixel(s, p - 1, neighborColor);
-    setStripPixel(s, p + 1, neighborColor);
+    CRGB neighbor_color = CHSV(twinkle_spots[i].hue, 255, brightness / 2);
+    SetStripPixel(s, p - 1, neighbor_color);
+    SetStripPixel(s, p + 1, neighbor_color);
   }
 }
 
 // Main Twinkle update — called every loop() when in Twinkle mode.
-void updateTwinkle() {
+void UpdateTwinkle() {
   // Global fade: every LED dims a little each frame.
-  fadeToBlackBy(ledsPin25, NUM_LEDS_PIN25, TWINKLE_FADE_AMOUNT);
-  fadeToBlackBy(ledsPin17, NUM_LEDS_PIN17, TWINKLE_FADE_AMOUNT);
-  fadeToBlackBy(ledsPin16, NUM_LEDS_PIN16, TWINKLE_FADE_AMOUNT);
+  fadeToBlackBy(leds_pin25, NUM_LEDS_PIN25, TWINKLE_FADE_AMOUNT);
+  fadeToBlackBy(leds_pin17, NUM_LEDS_PIN17, TWINKLE_FADE_AMOUNT);
+  fadeToBlackBy(leds_pin16, NUM_LEDS_PIN16, TWINKLE_FADE_AMOUNT);
 
   // Spawn new spots at the configured rate.
   unsigned long now = millis();
-  if (now - millisOfLastTwinkleSpawn >= millisBetweenTwinkleSpawns) {
-    millisOfLastTwinkleSpawn = now;
-    spawnTwinkleSpot();
+  if (now - millis_of_last_twinkle_spawn >= millis_between_twinkle_spawns) {
+    millis_of_last_twinkle_spawn = now;
+    SpawnTwinkleSpot();
   }
 
   // Refresh active spots (overrides the fade for living spots).
-  updateTwinkleSpots();
+  UpdateTwinkleSpots();
 
   FastLED.show();
 }
@@ -960,7 +957,7 @@ void updateTwinkle() {
 // Map a heat value (0–255) to a fire color.
 // Warm palette: black → red → orange → yellow → white (via HeatColor).
 // Cool palette: black → blue → purple → cyan → white (R and B swapped).
-CRGB fireColorFromHeat(uint8_t heat, bool cool) {
+CRGB FireColorFromHeat(uint8_t heat, bool cool) {
   CRGB color = HeatColor(heat);
   if (cool) {
     // Swap red and blue channels for a blue-fire look.
@@ -976,46 +973,46 @@ CRGB fireColorFromHeat(uint8_t heat, bool cool) {
 // The heat array is indexed in "logical" order (0 = fire source end).
 // If reversed is true, physical LED index is mirrored so that logical
 // index 0 maps to the highest physical index (for right-to-left wiring).
-void updateFireStrip(CRGB* leds, uint8_t* heat, int numLeds, bool reversed) {
+void UpdateFireStrip(CRGB* leds, uint8_t* heat, int num_leds, bool reversed) {
   // Step 1: Cool each cell by a small random amount.
-  for (int i = 0; i < numLeds; i++) {
-    heat[i] = qsub8(heat[i], random8(0, ((FIRE_COOLING * 10) / numLeds) + 2));
+  for (int i = 0; i < num_leds; i++) {
+    heat[i] = qsub8(heat[i], random8(0, ((FIRE_COOLING * 10) / num_leds) + 2));
   }
 
   // Step 2: Drift heat "upward" (from low index toward high index).
   // Work from the top down so we don't double-count.
-  for (int i = numLeds - 1; i >= 2; i--) {
+  for (int i = num_leds - 1; i >= 2; i--) {
     heat[i] = (heat[i - 1] + heat[i - 2] + heat[i - 2]) / 3;
   }
 
   // Step 3: Randomly ignite new sparks near the bottom (source end).
-  if (random8() < fireSparking) {
-    int sparkPos = random8(7);  // one of the first 7 cells
-    if (sparkPos < numLeds) {
-      heat[sparkPos] = qadd8(heat[sparkPos], random8(160, 255));
+  if (random8() < fire_sparking) {
+    int spark_pos = random8(7);  // one of the first 7 cells
+    if (spark_pos < num_leds) {
+      heat[spark_pos] = qadd8(heat[spark_pos], random8(160, 255));
     }
   }
 
   // Step 4: Map heat to color and write to the LED array.
-  for (int i = 0; i < numLeds; i++) {
-    int physicalIndex = reversed ? (numLeds - 1 - i) : i;
-    leds[physicalIndex] = fireColorFromHeat(heat[i], fireCoolPalette);
+  for (int i = 0; i < num_leds; i++) {
+    int physical_index = reversed ? (num_leds - 1 - i) : i;
+    leds[physical_index] = FireColorFromHeat(heat[i], fire_cool_palette);
   }
 }
 
 // Main Fire update — called every loop() when in Fire mode.
 // Throttled to FIRE_FRAME_MS so the effect runs at a mellow pace.
-void updateFire() {
+void UpdateFire() {
   unsigned long now = millis();
-  if (now - millisOfLastFireFrame < FIRE_FRAME_MS) return;
-  millisOfLastFireFrame = now;
+  if (now - millis_of_last_fire_frame < FIRE_FRAME_MS) return;
+  millis_of_last_fire_frame = now;
 
   // Pin 25 (under-cabinet): wired right-to-left, fire source at left (reversed).
-  updateFireStrip(ledsPin25, heatPin25, NUM_LEDS_PIN25, true);
+  UpdateFireStrip(leds_pin25, heat_pin25, NUM_LEDS_PIN25, true);
   // Pin 17 (ceiling left): wired right-to-left, fire source at left (reversed).
-  updateFireStrip(ledsPin17, heatPin17, NUM_LEDS_PIN17, true);
+  UpdateFireStrip(leds_pin17, heat_pin17, NUM_LEDS_PIN17, true);
   // Pin 16 (ceiling right): wired left-to-right, fire source at left (natural).
-  updateFireStrip(ledsPin16, heatPin16, NUM_LEDS_PIN16, false);
+  UpdateFireStrip(leds_pin16, heat_pin16, NUM_LEDS_PIN16, false);
   FastLED.show();
 }
 #endif
@@ -1027,7 +1024,7 @@ void updateFire() {
  *                                                                           *
  ****************************************************************************/
 
-int getSwitchPosition() {
+int GetSwitchPosition() {
   uint16_t input = analogRead(MODE_SWITCH_PIN);
   uint8_t val;
 
@@ -1069,71 +1066,76 @@ int getSwitchPosition() {
 // Debounce the mode switch and return the current committed switch position.
 // Reads the raw position and only commits a new value once it has been stable
 // for 50ms, filtering out sporadic analog noise.
-int getDebouncedSwitchPosition() {
-  int rawSwitchPosition = getSwitchPosition();
-  if (rawSwitchPosition != candidateSwitchPosition) {
-    candidateSwitchPosition = rawSwitchPosition;
-    millisWhenCandidateChanged = millis();
+int GetDebouncedSwitchPosition() {
+  int raw_switch_position = GetSwitchPosition();
+  if (raw_switch_position != candidate_switch_position) {
+    candidate_switch_position = raw_switch_position;
+    millis_when_candidate_changed = millis();
   }
-  int nextSwitchPosition = committedSwitchPosition;
-  if (candidateSwitchPosition != committedSwitchPosition &&
-      millis() - millisWhenCandidateChanged >= 50) {
-    committedSwitchPosition = candidateSwitchPosition;
-    nextSwitchPosition = committedSwitchPosition;
+  int next_switch_position = committed_switch_position;
+  if (candidate_switch_position != committed_switch_position &&
+      millis() - millis_when_candidate_changed >= 50) {
+    committed_switch_position = candidate_switch_position;
+    next_switch_position = committed_switch_position;
 #if IS_FASTLED_ENABLED
-    isLedDirty = true;
-    if (nextSwitchPosition == FIRE_MODE_INDEX) {
+    is_led_dirty = true;
+    // Animated modes bypass the normal brightness-from-twist path, so
+    // if we're arriving from a presence-faded mode (brightness == 0)
+    // the lights would stay dark.  Reset to full on any mode change.
+    FastLED.setBrightness(BRIGHTNESS);
+    previous_brightness = BRIGHTNESS;
+    if (next_switch_position == FIRE_MODE_INDEX) {
       // Entering Fire: zero out heat arrays and reset state.
-      memset(heatPin25, 0, sizeof(heatPin25));
-      memset(heatPin17, 0, sizeof(heatPin17));
-      memset(heatPin16, 0, sizeof(heatPin16));
-      fireSparking = FIRE_SPARKING;
-      fireCoolPalette = false;
+      memset(heat_pin25, 0, sizeof(heat_pin25));
+      memset(heat_pin17, 0, sizeof(heat_pin17));
+      memset(heat_pin16, 0, sizeof(heat_pin16));
+      fire_sparking = FIRE_SPARKING;
+      fire_cool_palette = false;
 #if IS_TWIST_ENABLED
-      fireTwistBaseline = twist.getCount();
+      fire_twist_baseline = twist.getCount();
 #endif
-      setAllLEDs(CRGB::Black);
+      SetAllLeds(CRGB::Black);
     }
-    if (nextSwitchPosition == RAINBOW_MODE_INDEX) {
+    if (next_switch_position == RAINBOW_MODE_INDEX) {
       // Entering Rainbow: pick a random starting hue, reset state, and
       // clear the strips so colors grow outward from the left.
-      rainbowHue = random(256);
-      rainbowAutoCycle = true;
-      millisOfLastRainbowShift = millis();
+      rainbow_hue = random(256);
+      rainbow_auto_cycle = true;
+      millis_of_last_rainbow_shift = millis();
 #if IS_TWIST_ENABLED
-      rainbowTwistBaseline = twist.getCount();
+      rainbow_twist_baseline = twist.getCount();
 #endif
-      setAllLEDs(CRGB::Black);
+      SetAllLeds(CRGB::Black);
     }
-    if (nextSwitchPosition == TWINKLE_MODE_INDEX) {
+    if (next_switch_position == TWINKLE_MODE_INDEX) {
       // Entering Twinkle: clear strips and reset all twinkle state.
       for (int i = 0; i < TWINKLE_MAX_ACTIVE; i++) {
-        twinkleSpots[i].active = false;
+        twinkle_spots[i].active = false;
       }
-      twinkleMonochrome = false;
-      millisBetweenTwinkleSpawns = TWINKLE_DEFAULT_SPAWN_MS;
-      millisOfLastTwinkleSpawn = millis();
+      twinkle_monochrome = false;
+      millis_between_twinkle_spawns = TWINKLE_DEFAULT_SPAWN_MS;
+      millis_of_last_twinkle_spawn = millis();
 #if IS_TWIST_ENABLED
-      twinkleTwistBaseline = twist.getCount();
+      twinkle_twist_baseline = twist.getCount();
 #endif
-      setAllLEDs(CRGB::Black);
+      SetAllLeds(CRGB::Black);
     }
 #endif
   }
-  return nextSwitchPosition;
+  return next_switch_position;
 }
 
 
 #if IS_TWIST_ENABLED
 // Clamp the twist brightness window so the current position stays inside it.
-void clampTwistWindow(int currentTwistPosition) {
-  if (currentTwistPosition < twistBrightnessWindowMin) {
-    twistBrightnessWindowMin = currentTwistPosition;
-    twistBrightnessWindowMax = currentTwistPosition + twistBrightnessWindowSize;
+void ClampTwistWindow(int current_twist_position) {
+  if (current_twist_position < twist_brightness_window_min) {
+    twist_brightness_window_min = current_twist_position;
+    twist_brightness_window_max = current_twist_position + kTwistBrightnessWindowSize;
   }
-  if (currentTwistPosition > twistBrightnessWindowMax) {
-    twistBrightnessWindowMin = currentTwistPosition - twistBrightnessWindowSize;
-    twistBrightnessWindowMax = currentTwistPosition;
+  if (current_twist_position > twist_brightness_window_max) {
+    twist_brightness_window_min = current_twist_position - kTwistBrightnessWindowSize;
+    twist_brightness_window_max = current_twist_position;
   }
 }
 #endif
@@ -1144,17 +1146,17 @@ void clampTwistWindow(int currentTwistPosition) {
  *                                                                           *
  ****************************************************************************/
 #if IS_PRESENCE_ENABLED
-int16_t checkPresence() {
-  sths34pf80_tmos_drdy_status_t dataReady;
-  if (mySensor.getDataReady(&dataReady) != 0) {
+int16_t CheckPresence() {
+  sths34pf80_tmos_drdy_status_t data_ready;
+  if (presence_sensor.getDataReady(&data_ready) != 0) {
     Serial.println("I2C error reading presence data-ready");
     return 0;
   }
 
   // Check whether sensor has new data - run through loop if data is ready
-  if (dataReady.drdy == 1) {
+  if (data_ready.drdy == 1) {
     sths34pf80_tmos_func_status_t status;
-    if (mySensor.getStatus(&status) != 0) {
+    if (presence_sensor.getStatus(&status) != 0) {
       Serial.println("I2C error reading presence status");
       return 0;
     }
@@ -1164,14 +1166,14 @@ int16_t checkPresence() {
     // temperature drift, so we only trigger when motion is also detected.
     if (status.pres_flag == 1 && status.mot_flag == 1) {
       // Presence Units: cm^-1
-      if (mySensor.getPresenceValue(&presenceVal) != 0) {
+      if (presence_sensor.getPresenceValue(&presence_val) != 0) {
         Serial.println("I2C error reading presence value");
         return 0;
       }
       Serial.print("Presence+Motion: ");
-      Serial.print(presenceVal);
+      Serial.print(presence_val);
       Serial.println(" cm^-1");
-      return presenceVal;
+      return presence_val;
     }
   }
 
@@ -1180,26 +1182,26 @@ int16_t checkPresence() {
 
 // Fade brightness in when presence is detected and out when it times out.
 // timeout controls how long after the last detection before fading begins.
-int applyPresenceFade(int brightness, unsigned long timeout) {
+int ApplyPresenceFade(int brightness, unsigned long timeout) {
   unsigned long now = millis();
-  unsigned long millisSincePresence = now - millisOfLastPresenceDetection;
+  unsigned long millis_since_presence = now - millis_of_last_presence_detection;
 
   // Phase 3: fully timed out — lights off.
-  if (millisSincePresence > timeout + millisFadeDuration) {
+  if (millis_since_presence > timeout + kFadeDurationMs) {
     return 0;
   }
   // Phase 2: fading out after timeout.
-  if (millisSincePresence > timeout) {
-    float amountFadeComplete = 1.0 * (millisSincePresence - timeout) / millisFadeDuration;
-    int brightnessReduction = (int)(255 * amountFadeComplete);
-    return max(0, brightness - brightnessReduction);
+  if (millis_since_presence > timeout) {
+    float amount_fade_complete = 1.0 * (millis_since_presence - timeout) / kFadeDurationMs;
+    int brightness_reduction = (int)(255 * amount_fade_complete);
+    return max(0, brightness - brightness_reduction);
   }
 
   // Phase 1: presence is active. Fade in if we recently came from darkness.
-  unsigned long millisSinceFadeIn = now - millisOfPresenceFadeInStart;
-  if (millisSinceFadeIn < millisFadeInDuration) {
-    float amountFadeInComplete = 1.0 * millisSinceFadeIn / millisFadeInDuration;
-    return (int)(brightness * amountFadeInComplete);
+  unsigned long millis_since_fade_in = now - millis_of_presence_fade_in_start;
+  if (millis_since_fade_in < kFadeInDurationMs) {
+    float amount_fade_in_complete = 1.0 * millis_since_fade_in / kFadeInDurationMs;
+    return (int)(brightness * amount_fade_in_complete);
   }
 
   return brightness;
@@ -1216,68 +1218,68 @@ int applyPresenceFade(int brightness, unsigned long timeout) {
 // relative to sunrise and sunset. Falls back to the default Routine color
 // if time data hasn't been parsed yet.
 #if IS_FASTLED_ENABLED
-CRGB getRoutineColor() {
-  if (currentTimeHours < 0 || sunriseHours < 0 || sunsetHours < 0) {
-    return modeColor[ROUTINE_MODE_INDEX];
+CRGB GetRoutineColor() {
+  if (current_time_hours < 0 || sunrise_hours < 0 || sunset_hours < 0) {
+    return mode_color[ROUTINE_MODE_INDEX];
   }
-  int now     = currentTimeHours * 60 + currentTimeMinutes;
-  int sunrise = sunriseHours     * 60 + sunriseMinutes;
-  int sunset  = sunsetHours      * 60 + sunsetMinutes;
+  int now     = current_time_hours * 60 + current_time_minutes;
+  int sunrise = sunrise_hours     * 60 + sunrise_minutes;
+  int sunset  = sunset_hours      * 60 + sunset_minutes;
 
   if(millis() % 5000 < 10) Serial.printf("now: %d  | sunrise: %d |  sunset: %d\n", now, sunrise, sunset);
 
 
-  if (now < sunrise - 60)  return modeColor[NIGHT_MODE_INDEX];   // deep night
-  if (now < sunrise + 30)  return modeColor[4];                  // Dishes — near sunrise
-  if (now < sunset  - 60)  return modeColor[2];                  // Cook Day
-  if (now < sunset)        return modeColor[3];                  // Cook Night — pre-sunset
-  if (now < sunset  + 60)  return modeColor[4];                  // Dishes — post-sunset
-  return modeColor[NIGHT_MODE_INDEX];                            // night
+  if (now < sunrise - 60)  return mode_color[NIGHT_MODE_INDEX];   // deep night
+  if (now < sunrise + 30)  return mode_color[4];                  // Dishes — near sunrise
+  if (now < sunset  - 60)  return mode_color[2];                  // Cook Day
+  if (now < sunset)        return mode_color[3];                  // Cook Night — pre-sunset
+  if (now < sunset  + 60)  return mode_color[4];                  // Dishes — post-sunset
+  return mode_color[NIGHT_MODE_INDEX];                            // night
 }
 #endif // IS_FASTLED_ENABLED
 
 #if IS_WIFI_ENABLED
-void fetchWeatherReport() {
+void FetchWeatherReport() {
   // wait for WiFi connection
   Serial.println("about to try to use wifi");
-  if ((wifiMulti.run() == WL_CONNECTED)) {
+  if ((wifi_multi.run() == WL_CONNECTED)) {
 
     HTTPClient http;
     http.begin(WEATHER_URL);
     Serial.print("Requesting ");
     Serial.println(WEATHER_URL);
     // start connection and send HTTP header
-    int httpCode = http.GET();
+    int http_code = http.GET();
 
-    // httpCode will be negative on error
-    millisWhenWeatherLastFetched = millis();
-    if (httpCode > 0) {
+    // http_code will be negative on error
+    millis_when_weather_last_fetched = millis();
+    if (http_code > 0) {
       // HTTP header has been send and Server response header has been handled
       // file found at server
-      if (httpCode == HTTP_CODE_OK) {
+      if (http_code == HTTP_CODE_OK) {
         String payload = http.getString();
-        parseWeatherReport(payload);
+        ParseWeatherReport(payload);
         Serial.print("Weather report: ");
-        Serial.print(millisWhenWeatherLastFetched);
+        Serial.print(millis_when_weather_last_fetched);
         Serial.print(" - ");
         Serial.println(payload);
 
       }
     } else {
-      Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
+      Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(http_code).c_str());
     }
 
     http.end();
   }
 }
 
-void parseWeatherReport(String raw) {
+void ParseWeatherReport(String raw) {
   for (int i = 0; i < WEATHER_REPORT_MAX_LENGTH; ++i) {
-    weatherReport[i] = "";
+    weather_report[i] = "";
   }
 
-  int tokensFound = 0;
-  int tokenStart = 0;
+  int tokens_found = 0;
+  int token_start = 0;
   for (int i = 0; i < raw.length(); ++i) {
     // expressing the degree symbol seems complex. This method seems to work for me:
     // https://forum.arduino.cc/t/solved-how-to-print-the-degree-symbol-extended-ascii/438685/40
@@ -1291,44 +1293,44 @@ void parseWeatherReport(String raw) {
 
     // Use the | character as a delimiter to mark what info should be
     if (raw.charAt(i) == '|') {
-      String token = raw.substring(tokenStart,i);
+      String token = raw.substring(token_start,i);
       i += 1;
-      tokenStart = i;
-      if (tokensFound < WEATHER_REPORT_MAX_LENGTH) {
-        weatherReport[tokensFound] = token;
-        tokensFound += 1;
+      token_start = i;
+      if (tokens_found < WEATHER_REPORT_MAX_LENGTH) {
+        weather_report[tokens_found] = token;
+        tokens_found += 1;
       }
     }
   }
   // Capture the final token after the last delimiter.
-  if (tokenStart < raw.length() && tokensFound < WEATHER_REPORT_MAX_LENGTH) {
-    weatherReport[tokensFound] = raw.substring(tokenStart);
+  if (token_start < raw.length() && tokens_found < WEATHER_REPORT_MAX_LENGTH) {
+    weather_report[tokens_found] = raw.substring(token_start);
   }
 
-  // Parse current time from weatherReport[0] (format "H:MM" or "HH:MM").
+  // Parse current time from weather_report[0] (format "H:MM" or "HH:MM").
   {
-    int colon = weatherReport[0].indexOf(':');
+    int colon = weather_report[0].indexOf(':');
     if (colon > 0) {
-      currentTimeHours   = weatherReport[0].substring(0, colon).toInt();
-      currentTimeMinutes = weatherReport[0].substring(colon + 1).toInt();
+      current_time_hours   = weather_report[0].substring(0, colon).toInt();
+      current_time_minutes = weather_report[0].substring(colon + 1).toInt();
     }
   }
 
   // Scan all tokens for "Sunrise: ..." and "Sunset: ..." entries.
   for (int i = 1; i < WEATHER_REPORT_MAX_LENGTH; ++i) {
-    if (weatherReport[i].startsWith("Sunrise: ")) {
-      String t = weatherReport[i].substring(9);  // after "Sunrise: "
+    if (weather_report[i].startsWith("Sunrise: ")) {
+      String t = weather_report[i].substring(9);  // after "Sunrise: "
       int colon = t.indexOf(':');
       if (colon > 0) {
-        sunriseHours   = t.substring(0, colon).toInt();
-        sunriseMinutes = t.substring(colon + 1).toInt();
+        sunrise_hours   = t.substring(0, colon).toInt();
+        sunrise_minutes = t.substring(colon + 1).toInt();
       }
-    } else if (weatherReport[i].startsWith("Sunset: ")) {
-      String t = weatherReport[i].substring(8);  // after "Sunset: "
+    } else if (weather_report[i].startsWith("Sunset: ")) {
+      String t = weather_report[i].substring(8);  // after "Sunset: "
       int colon = t.indexOf(':');
       if (colon > 0) {
-        sunsetHours   = t.substring(0, colon).toInt();
-        sunsetMinutes = t.substring(colon + 1).toInt();
+        sunset_hours   = t.substring(0, colon).toInt();
+        sunset_minutes = t.substring(colon + 1).toInt();
       }
     }
   }
@@ -1342,90 +1344,90 @@ void parseWeatherReport(String raw) {
  ****************************************************************************/
 
 #if IS_AIR_SENSOR_ENABLED && IS_WIFI_ENABLED
-void reportAirQuality() {
+void ReportAirQuality() {
 
   // some floats to store read values in
-  float ambientHumidity41;
-  float ambientTemperature41;
+  float ambient_humidity41;
+  float ambient_temperature41;
   float co2;
-  float massConcentrationPm1p0;
-  float massConcentrationPm2p5;
-  float massConcentrationPm4p0;
-  float massConcentrationPm10p0;
-  float ambientHumidity55;
-  float ambientTemperature55;
-  float vocIndex;
-  float noxIndex;
+  float mass_concentration_pm1p0;
+  float mass_concentration_pm2p5;
+  float mass_concentration_pm4p0;
+  float mass_concentration_pm10p0;
+  float ambient_humidity55;
+  float ambient_temperature55;
+  float voc_index;
+  float nox_index;
 
   // readMeasurement will return true when fresh data is available
   if (sen41.readMeasurement()) {
-    ambientHumidity41 = sen41.getHumidity();
-    ambientTemperature41 = sen41.getTemperature();
+    ambient_humidity41 = sen41.getHumidity();
+    ambient_temperature41 = sen41.getTemperature();
     co2 = sen41.getCO2();
   } else {
     Serial.print(F("."));
   }
   uint16_t error;
-  char errorMessage[256];
+  char error_message[256];
 
   error = sen55.readMeasuredValues(
-      massConcentrationPm1p0, massConcentrationPm2p5, massConcentrationPm4p0,
-      massConcentrationPm10p0, ambientHumidity55, ambientTemperature55, vocIndex,
-      noxIndex);
+      mass_concentration_pm1p0, mass_concentration_pm2p5, mass_concentration_pm4p0,
+      mass_concentration_pm10p0, ambient_humidity55, ambient_temperature55, voc_index,
+      nox_index);
 
   if (error) {
       Serial.print("Error trying to execute readMeasuredValues(): ");
-      errorToString(error, errorMessage, 256);
-      Serial.println(errorMessage);
+      errorToString(error, error_message, 256);
+      Serial.println(error_message);
   }
 
-  String airUrl = AIR_URL;
-  airUrl += TEMP_41_PREFIX;
-  airUrl += ambientTemperature41;
-  airUrl += TEMP_55_PREFIX;
-  airUrl += ambientTemperature55;
-  airUrl += CO2_PREFIX;
-  airUrl += co2;
-  airUrl += HUMIDITY_41_PREFIX;
-  airUrl += ambientHumidity41;
-  airUrl += HUMIDITY_55_PREFIX;
-  airUrl += ambientHumidity55;
-  airUrl += PARTICULATE_1p0_PREFIX;
-  airUrl += massConcentrationPm1p0;
-  airUrl += PARTICULATE_2p5_PREFIX;
-  airUrl += massConcentrationPm2p5;
-  airUrl += PARTICULATE_4p0_PREFIX;
-  airUrl += massConcentrationPm4p0;
-  airUrl += PARTICULATE_10_PREFIX;
-  airUrl += massConcentrationPm10p0;
-  airUrl += VOC_PREFIX;
-  airUrl += vocIndex;
-  airUrl += NOX_PREFIX;
-  airUrl += noxIndex;
-  Serial.println(airUrl);
-  sendAirReport(airUrl);
+  String air_url = AIR_URL;
+  air_url += TEMP_41_PREFIX;
+  air_url += ambient_temperature41;
+  air_url += TEMP_55_PREFIX;
+  air_url += ambient_temperature55;
+  air_url += CO2_PREFIX;
+  air_url += co2;
+  air_url += HUMIDITY_41_PREFIX;
+  air_url += ambient_humidity41;
+  air_url += HUMIDITY_55_PREFIX;
+  air_url += ambient_humidity55;
+  air_url += PARTICULATE_1p0_PREFIX;
+  air_url += mass_concentration_pm1p0;
+  air_url += PARTICULATE_2p5_PREFIX;
+  air_url += mass_concentration_pm2p5;
+  air_url += PARTICULATE_4p0_PREFIX;
+  air_url += mass_concentration_pm4p0;
+  air_url += PARTICULATE_10_PREFIX;
+  air_url += mass_concentration_pm10p0;
+  air_url += VOC_PREFIX;
+  air_url += voc_index;
+  air_url += NOX_PREFIX;
+  air_url += nox_index;
+  Serial.println(air_url);
+  SendAirReport(air_url);
 }
 
-void sendAirReport(String airUrl) {
+void SendAirReport(String air_url) {
   // wait for WiFi connection
-  if ((wifiMulti.run() == WL_CONNECTED)) {
+  if ((wifi_multi.run() == WL_CONNECTED)) {
 
     HTTPClient http;
-    http.begin(airUrl);
+    http.begin(air_url);
     // start connection and send HTTP header
-    int httpCode = http.GET();
+    int http_code = http.GET();
 
-    // httpCode will be negative on error
-    if (httpCode > 0) {
+    // http_code will be negative on error
+    if (http_code > 0) {
       // HTTP header has been send and Server response header has been handled
       // file found at server
-      if (httpCode == HTTP_CODE_OK) {
-        millisWhenAirLastReported = millis();
+      if (http_code == HTTP_CODE_OK) {
+        millis_when_air_last_reported = millis();
         String payload = http.getString();
         Serial.println(payload);
       }
     } else {
-      Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
+      Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(http_code).c_str());
     }
 
     http.end();
@@ -1435,6 +1437,6 @@ void sendAirReport(String airUrl) {
 // if the air sensor is enabled, but the wi-fi is not, we would like to pretend to send
 // an air report. This should compile, but does not need to do anything. See the beginning
 // of loop().
-inline void reportAirQuality(){}
+inline void ReportAirQuality(){}
 #endif // IS_AIR_SENSOR_ENABLED && IS_WIFI_ENABLED
 

@@ -1,6 +1,9 @@
+#ifndef KITCHEN_LIGHTS_LICENSES_H_
+#define KITCHEN_LIGHTS_LICENSES_H_
+
 /*
  * LCD
- * 
+ *
  * Sample Code Original Header
  *
  */
@@ -236,4 +239,4 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 ******************************************************************************/
 
-
+#endif  // KITCHEN_LIGHTS_LICENSES_H_
