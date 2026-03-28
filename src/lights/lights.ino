@@ -15,10 +15,11 @@
 #define IS_DISPLAY_ENABLED    true
 #define IS_FASTLED_ENABLED    true
 
-// The I2C bus is needed if any I2C device is enabled.
-#define IS_I2C_BUS_ENABLED (IS_DISPLAY_ENABLED || IS_TWIST_ENABLED || IS_PRESENCE_ENABLED || IS_AIR_SENSOR_ENABLED)
+// The primary I2C bus is needed for display, twist, and air sensor.
+// The presence sensor uses a separate I2C bus (Wire1) but still needs Wire.h.
+#define IS_I2C_BUS_ENABLED (IS_DISPLAY_ENABLED || IS_TWIST_ENABLED || IS_AIR_SENSOR_ENABLED)
 
-#if IS_I2C_BUS_ENABLED
+#if IS_I2C_BUS_ENABLED || IS_PRESENCE_ENABLED
 #include <Wire.h>
 #endif
 
@@ -48,47 +49,47 @@ unsigned long millis_when_air_last_reported = 0;
 // LED chipset configuration
 #define CHIPSET     WS2811
 #define COLOR_ORDER BRG
-#define BRIGHTNESS  20
+constexpr int kBrightness = 20;
 
 // Under-cabinet run (pin 25), wired right-to-left in the real world.
 // Logical addressing is left-to-right: D, C, B, A.
-#define UNDER_CAB_RIGHT  25  // under the rightmost cabinet
-#define OVER_SINK  25  // around and over the sink
-#define UNDER_CAB_CORNER  25  // left wall cabinet 1
-#define UNDER_CAB_LEFT  25  // left wall cabinet 2
-#define NUM_LEDS_PIN25 (UNDER_CAB_RIGHT + OVER_SINK + UNDER_CAB_CORNER + UNDER_CAB_LEFT)
-CRGB leds_pin25[NUM_LEDS_PIN25];
+constexpr int kUnderCabRight = 25;   // under the rightmost cabinet
+constexpr int kOverSink = 25;        // around and over the sink
+constexpr int kUnderCabCorner = 25;  // left wall cabinet 1
+constexpr int kUnderCabLeft = 25;    // left wall cabinet 2
+constexpr int kNumLedsPin25 = kUnderCabRight + kOverSink + kUnderCabCorner + kUnderCabLeft;
+CRGB leds_pin25[kNumLedsPin25];
 
 // Ceiling run — two pins acting as one logical strip, left to right.
 // Pin 17: wired right-to-left (reversed in software).
 // Pin 16: wired left-to-right (natural order).
-#define CEILING_LEFT  50  // pin 17
-#define CEILING_RIGHT  50  // pin 16
-#define NUM_LEDS_PIN17 CEILING_LEFT
-#define NUM_LEDS_PIN16 CEILING_RIGHT
-CRGB leds_pin17[NUM_LEDS_PIN17];
-CRGB leds_pin16[NUM_LEDS_PIN16];
+constexpr int kCeilingLeft = 50;   // pin 17
+constexpr int kCeilingRight = 50;  // pin 16
+constexpr int kNumLedsPin17 = kCeilingLeft;
+constexpr int kNumLedsPin16 = kCeilingRight;
+CRGB leds_pin17[kNumLedsPin17];
+CRGB leds_pin16[kNumLedsPin16];
 
 CRGB previous_color;
 int previous_brightness;
 bool is_led_dirty = true;
 
 // Rainbow mode state
-#define RAINBOW_MODE_INDEX      7
-#define RAINBOW_PROPAGATION_MS  3000
+constexpr int kRainbowModeIndex = 7;
+constexpr unsigned long kRainbowPropagationMs = 3000;
 uint8_t rainbow_hue = 0;
 bool    rainbow_auto_cycle = true;
 unsigned long millis_of_last_rainbow_shift = 0;
 int     rainbow_twist_baseline = 0;
 
 // Twinkle mode state
-#define TWINKLE_MODE_INDEX      8
-#define TWINKLE_MAX_ACTIVE      30
-#define TWINKLE_SPOT_LIFETIME   1500   // ms — how long a spot fades in and spreads
-#define TWINKLE_FADE_AMOUNT     5    // per-loop fade; ~2–4s full decay at 5ms loop
-#define TWINKLE_DEFAULT_SPAWN_MS 73  // ~15 spawns/sec
-#define TWINKLE_MIN_SPAWN_MS    30    // fastest (~30/sec)
-#define TWINKLE_MAX_SPAWN_MS    500   // slowest (~2/sec)
+constexpr int kTwinkleModeIndex = 8;
+constexpr int kTwinkleMaxActive = 30;
+constexpr unsigned long kTwinkleSpotLifetime = 1500;    // ms — how long a spot fades in and spreads
+constexpr int kTwinkleFadeAmount = 5;                   // per-loop fade; ~2–4s full decay at 5ms loop
+constexpr unsigned long kTwinkleDefaultSpawnMs = 73;    // ~15 spawns/sec
+constexpr unsigned long kTwinkleMinSpawnMs = 30;        // fastest (~30/sec)
+constexpr unsigned long kTwinkleMaxSpawnMs = 500;       // slowest (~2/sec)
 
 struct TwinkleSpot {
   uint8_t strip;          // 0 = pin25, 1 = pin17, 2 = pin16
@@ -97,37 +98,37 @@ struct TwinkleSpot {
   unsigned long birth_ms;
   bool active;
 };
-TwinkleSpot twinkle_spots[TWINKLE_MAX_ACTIVE];
+TwinkleSpot twinkle_spots[kTwinkleMaxActive];
 
 // A small palette of complementary, fully-saturated hues.
 // Blues and greens only — avoids jarring hue clashes between neighbors.
 // HSV hues: ~80 (green) through ~170 (blue).
 const uint8_t twinkle_palette[] = { 80, 96, 110, 128, 145, 160 };
-#define TWINKLE_PALETTE_SIZE 6
+constexpr int kTwinklePaletteSize = sizeof(twinkle_palette);
 
 uint8_t twinkle_mono_hue = 0;
 bool    twinkle_monochrome = false;
-unsigned long millis_between_twinkle_spawns = TWINKLE_DEFAULT_SPAWN_MS;
+unsigned long millis_between_twinkle_spawns = kTwinkleDefaultSpawnMs;
 unsigned long millis_of_last_twinkle_spawn = 0;
 int     twinkle_twist_baseline = 0;
 
 // Mode indices
-#define ROUTINE_MODE_INDEX  1
-#define NIGHT_MODE_INDEX    5
+constexpr int kRoutineModeIndex = 1;
+constexpr int kNightModeIndex = 5;
 
 // Fire mode state
-#define FIRE_MODE_INDEX     6
-#define FIRE_COOLING        55    // higher = shorter flames, more cooling per frame
-#define FIRE_SPARKING       120   // chance (out of 255) of a new spark each frame
-#define FIRE_MIN_SPARKING   40    // calmest embers
-#define FIRE_MAX_SPARKING   200   // most intense fire
-#define FIRE_FRAME_MS       15    // ms between simulation steps (~3x slower than loop)
+constexpr int kFireModeIndex = 6;
+constexpr int kFireCooling = 55;           // higher = shorter flames, more cooling per frame
+constexpr int kFireSparking = 120;         // chance (out of 255) of a new spark each frame
+constexpr int kFireMinSparking = 40;       // calmest embers
+constexpr int kFireMaxSparking = 200;      // most intense fire
+constexpr unsigned long kFireFrameMs = 15; // ms between simulation steps (~3x slower than loop)
 
-uint8_t heat_pin25[NUM_LEDS_PIN25];
-uint8_t heat_pin17[NUM_LEDS_PIN17];
-uint8_t heat_pin16[NUM_LEDS_PIN16];
+uint8_t heat_pin25[kNumLedsPin25];
+uint8_t heat_pin17[kNumLedsPin17];
+uint8_t heat_pin16[kNumLedsPin16];
 
-uint8_t fire_sparking = FIRE_SPARKING;
+uint8_t fire_sparking = kFireSparking;
 bool    fire_cool_palette = false;  // false = warm (red/orange), true = cool (blue/purple)
 int     fire_twist_baseline = 0;
 unsigned long millis_of_last_fire_frame = 0;
@@ -136,7 +137,7 @@ unsigned long millis_of_last_fire_frame = 0;
 /*
  * Mode Switching
  */
-#define MODE_SWITCH_PIN A5
+constexpr int kModeSwitchPin = A5;
 int candidate_switch_position = -1;
 int committed_switch_position = 0;
 unsigned long millis_when_candidate_changed = 0;
@@ -198,10 +199,10 @@ uint8_t twist_colors[][3] = {
 };
 #endif
 
-#define WEATHER_REPORT_MAX_LENGTH 10
+constexpr int kWeatherReportMaxLength = 10;
 
 #if IS_DISPLAY_ENABLED
-#define DISPLAY_ADDRESS1 0x72 //This is the default address of the OpenLCD
+constexpr uint8_t kDisplayAddress = 0x72; // default address of the OpenLCD
 // this buffer is used to create helpful debugging messages to send
 // over the serial interface.
 String previous_message_top = "";
@@ -211,7 +212,7 @@ int current_weather_report_display = 1;
 unsigned long millis_when_bottom_row_updated = 0;
 bool is_display_dirty = true;
 unsigned long millis_of_last_display_attempt = 0;
-#define DISPLAY_RETRY_INTERVAL 2000  // wait 2s before retrying a failed write
+constexpr unsigned long kDisplayRetryInterval = 2000;  // wait 2s before retrying a failed write
 #endif // IS_DISPLAY_ENABLED
 
 #if IS_DISPLAY_ENABLED || IS_FASTLED_ENABLED || IS_WIFI_ENABLED
@@ -231,6 +232,8 @@ int sunset_minutes = -1;
 #if IS_PRESENCE_ENABLED
 #include "SparkFun_STHS34PF80_Arduino_Library.h"
 STHS34PF80_I2C presence_sensor;
+constexpr int kPresenceSda = 26;
+constexpr int kPresenceScl = 27;
 
 // Values to fill with presence and motion data
 int16_t presence_val = 0;
@@ -314,11 +317,11 @@ void SetupLeds() {
   delay( 3000 ); // power-up safety delay
   // Use pins 25, 17, and 16 because they're adjacent to one another on my board, and
   // Pins 1 and 3 are the default Serial TX and RX pins. This was stomping on debugging.
-  FastLED.addLeds<CHIPSET, 25, COLOR_ORDER>(leds_pin25, NUM_LEDS_PIN25);  // under-cabinet
-  FastLED.addLeds<CHIPSET, 17, COLOR_ORDER>(leds_pin17, NUM_LEDS_PIN17);  // ceiling left
-  FastLED.addLeds<CHIPSET, 16, COLOR_ORDER>(leds_pin16, NUM_LEDS_PIN16);  // ceiling right
-  FastLED.setBrightness( BRIGHTNESS );
-  previous_brightness = BRIGHTNESS;
+  FastLED.addLeds<CHIPSET, 25, COLOR_ORDER>(leds_pin25, kNumLedsPin25);  // under-cabinet
+  FastLED.addLeds<CHIPSET, 17, COLOR_ORDER>(leds_pin17, kNumLedsPin17);  // ceiling left
+  FastLED.addLeds<CHIPSET, 16, COLOR_ORDER>(leds_pin16, kNumLedsPin16);  // ceiling right
+  FastLED.setBrightness( kBrightness );
+  previous_brightness = kBrightness;
 }
 #endif // IS_FASTLED_ENABLED
 
@@ -326,14 +329,14 @@ void SetupLeds() {
 void SetupDisplay() {
   // Wire.begin() is called once in setup() before any device init.
   //Send the reset command to the display - this forces the cursor to return to the beginning of the display
-  Wire.beginTransmission(DISPLAY_ADDRESS1);
+  Wire.beginTransmission(kDisplayAddress);
   Wire.write('|'); // Put LCD into setting mode
   Wire.write(160); // turn down the green of the backlight
   Wire.write(188); // turn off the blue of the backlight
   Wire.write('-'); // Send clear display command
   Wire.endTransmission();
 
-  for (int i = 0; i < WEATHER_REPORT_MAX_LENGTH; ++i) {
+  for (int i = 0; i < kWeatherReportMaxLength; ++i) {
     weather_report[i] = "";
   }
 }
@@ -356,9 +359,10 @@ void SetupTwist() {
 #if IS_PRESENCE_ENABLED
 // https://github.com/sparkfun/SparkFun_STHS34PF80_Arduino_Library
 void SetupPresence() {
-    // Establish communication with device
-    if (presence_sensor.begin() == false) {
-      Serial.println("Error setting up device - please check wiring.");
+    Wire1.begin(kPresenceSda, kPresenceScl);
+    // Establish communication with device on its own I2C bus
+    if (presence_sensor.begin(STHS34PF80_I2C_ADDRESS, Wire1) == false) {
+      Serial.println("Error setting up presence sensor - please check wiring.");
       while(1);
     }
 }
@@ -538,18 +542,18 @@ void loop(){
 #if IS_TWIST_ENABLED
   if (twist.isClicked()) {
 #if IS_FASTLED_ENABLED
-    if (committed_switch_position == FIRE_MODE_INDEX) {
+    if (committed_switch_position == kFireModeIndex) {
       // In Fire mode, the button toggles warm/cool palette.
       fire_cool_palette = !fire_cool_palette;
-    } else if (committed_switch_position == RAINBOW_MODE_INDEX) {
+    } else if (committed_switch_position == kRainbowModeIndex) {
       // In Rainbow mode, the button toggles auto-cycle on/off.
       rainbow_auto_cycle = !rainbow_auto_cycle;
-    } else if (committed_switch_position == TWINKLE_MODE_INDEX) {
+    } else if (committed_switch_position == kTwinkleModeIndex) {
       // In Twinkle mode, the button toggles monochrome on/off.
       twinkle_monochrome = !twinkle_monochrome;
       if (twinkle_monochrome) {
         // Latch the most recently used palette hue.
-        twinkle_mono_hue = twinkle_palette[random(TWINKLE_PALETTE_SIZE)];
+        twinkle_mono_hue = twinkle_palette[random(kTwinklePaletteSize)];
       }
     } else
 #endif // IS_FASTLED_ENABLED
@@ -565,7 +569,6 @@ void loop(){
   int next_switch_position = GetDebouncedSwitchPosition();
 
 #if IS_PRESENCE_ENABLED
-  delay(1); // brief gap between I2C devices to reduce bus contention
   int detected_presence = 0;
   if (millis() - millis_of_last_presence_check > 150) {
     millis_of_last_presence_check = millis();
@@ -586,23 +589,23 @@ void loop(){
   int current_twist_position = twist.getCount();
 
 #if IS_FASTLED_ENABLED
-  if (next_switch_position == FIRE_MODE_INDEX) {
+  if (next_switch_position == kFireModeIndex) {
     // In Fire mode the twist controls sparking intensity.
     int twist_delta = current_twist_position - fire_twist_baseline;
     int new_sparking = (int)fire_sparking + (twist_delta * 5);
-    fire_sparking = constrain(new_sparking, FIRE_MIN_SPARKING, FIRE_MAX_SPARKING);
+    fire_sparking = constrain(new_sparking, kFireMinSparking, kFireMaxSparking);
     fire_twist_baseline = current_twist_position;
-  } else if (next_switch_position == RAINBOW_MODE_INDEX) {
+  } else if (next_switch_position == kRainbowModeIndex) {
     // In Rainbow mode the twist controls hue, not brightness.
     int twist_delta = current_twist_position - rainbow_twist_baseline;
     rainbow_hue += (uint8_t)twist_delta;  // wraps naturally
     rainbow_twist_baseline = current_twist_position;
-  } else if (next_switch_position == TWINKLE_MODE_INDEX) {
+  } else if (next_switch_position == kTwinkleModeIndex) {
     // In Twinkle mode the twist controls spawn rate.
     int twist_delta = current_twist_position - twinkle_twist_baseline;
     // Each tick adjusts spawn interval by ~10ms.
     int new_interval = (int)millis_between_twinkle_spawns - (twist_delta * 10);
-    millis_between_twinkle_spawns = constrain(new_interval, TWINKLE_MIN_SPAWN_MS, TWINKLE_MAX_SPAWN_MS);
+    millis_between_twinkle_spawns = constrain(new_interval, kTwinkleMinSpawnMs, kTwinkleMaxSpawnMs);
     twinkle_twist_baseline = current_twist_position;
   } else
 #endif // IS_FASTLED_ENABLED
@@ -614,9 +617,9 @@ void loop(){
 
 #if IS_PRESENCE_ENABLED && IS_FASTLED_ENABLED
     // Fade brightness based on presence detection.
-    if (next_switch_position == NIGHT_MODE_INDEX) {
+    if (next_switch_position == kNightModeIndex) {
       requested_brightness = ApplyPresenceFade(requested_brightness);
-    } else if (next_switch_position == ROUTINE_MODE_INDEX) {
+    } else if (next_switch_position == kRoutineModeIndex) {
       requested_brightness = ApplyPresenceFade(requested_brightness, kRoutinePresenceTimeoutMs);
     }
 #endif // IS_PRESENCE_ENABLED && IS_FASTLED_ENABLED
@@ -636,20 +639,20 @@ void loop(){
 #if IS_DISPLAY_ENABLED
   message_top = PrepareTopMessage(next_switch_position);
   message_bottom = PrepareBottomMessage();
-  if (is_display_dirty && millis() - millis_of_last_display_attempt > DISPLAY_RETRY_INTERVAL) {
+  if (is_display_dirty && millis() - millis_of_last_display_attempt > kDisplayRetryInterval) {
     millis_of_last_display_attempt = millis();
     UpdateDisplay(message_top, message_bottom);
   }
 #endif // IS_DISPLAY_ENABLED
 
 #if IS_FASTLED_ENABLED
-  if (next_switch_position == FIRE_MODE_INDEX) {
+  if (next_switch_position == kFireModeIndex) {
     UpdateFire();
-  } else if (next_switch_position == RAINBOW_MODE_INDEX) {
+  } else if (next_switch_position == kRainbowModeIndex) {
     UpdateRainbow();
-  } else if (next_switch_position == TWINKLE_MODE_INDEX) {
+  } else if (next_switch_position == kTwinkleModeIndex) {
     UpdateTwinkle();
-  } else if (next_switch_position == ROUTINE_MODE_INDEX) {
+  } else if (next_switch_position == kRoutineModeIndex) {
     CRGB routine_color = GetRoutineColor();
     if (is_led_dirty || routine_color != previous_color) {
       SetAllLeds(routine_color);
@@ -682,7 +685,7 @@ String PrepareTopMessage(uint8_t switch_pos) {
 }
 
 String PrepareBottomMessage() {
-  if (current_weather_report_display >= WEATHER_REPORT_MAX_LENGTH ||
+  if (current_weather_report_display >= kWeatherReportMaxLength ||
       weather_report[current_weather_report_display].length() == 0) {
     current_weather_report_display = 1;
   }
@@ -701,7 +704,7 @@ void UpdateDisplay(String message_top, String message_bottom) {
 
   // Send the clear command in its own transaction — the OpenLCD needs
   // ~10ms to execute it before it can accept new characters.
-  Wire.beginTransmission(DISPLAY_ADDRESS1);
+  Wire.beginTransmission(kDisplayAddress);
   Wire.write('|'); //Put LCD into setting mode
   Wire.write('-'); //Send clear display command
   uint8_t clear_error = Wire.endTransmission();
@@ -714,7 +717,7 @@ void UpdateDisplay(String message_top, String message_bottom) {
   delay(10); // let the display finish the clear
 
   // Now send the actual content.
-  Wire.beginTransmission(DISPLAY_ADDRESS1);
+  Wire.beginTransmission(kDisplayAddress);
   Wire.print(message_top);
   unsigned int chars_printed = message_top.length();
   while (chars_printed < 16) {
@@ -745,8 +748,8 @@ void UpdateDisplay(String message_top, String message_bottom) {
 // The strip is wired right-to-left, so we reverse the index so that
 // logical position 0 corresponds to the leftmost LED (section D).
 void SetUnderCabinetLeds(CRGB color) {
-  for (int i = 0; i < NUM_LEDS_PIN25; i++) {
-    leds_pin25[NUM_LEDS_PIN25 - 1 - i] = color;
+  for (int i = 0; i < kNumLedsPin25; i++) {
+    leds_pin25[kNumLedsPin25 - 1 - i] = color;
   }
 }
 
@@ -755,10 +758,10 @@ void SetUnderCabinetLeds(CRGB color) {
 // left-to-right (natural order), so an animation starting at logical
 // position 0 flows seamlessly from pin 17 into pin 16.
 void SetCeilingLeds(CRGB color) {
-  for (int i = 0; i < NUM_LEDS_PIN17; i++) {
-    leds_pin17[NUM_LEDS_PIN17 - 1 - i] = color;
+  for (int i = 0; i < kNumLedsPin17; i++) {
+    leds_pin17[kNumLedsPin17 - 1 - i] = color;
   }
-  for (int i = 0; i < NUM_LEDS_PIN16; i++) {
+  for (int i = 0; i < kNumLedsPin16; i++) {
     leds_pin16[i] = color;
   }
 }
@@ -773,10 +776,10 @@ void SetAllLeds(CRGB color) {
 // left-to-right) and inject a new color at the leftmost end.
 // Physical wiring is right-to-left, so leftmost = highest index.
 void ShiftUnderCabinetRight(CRGB new_color) {
-  for (int i = 0; i < NUM_LEDS_PIN25 - 1; i++) {
+  for (int i = 0; i < kNumLedsPin25 - 1; i++) {
     leds_pin25[i] = leds_pin25[i + 1];
   }
-  leds_pin25[NUM_LEDS_PIN25 - 1] = new_color;
+  leds_pin25[kNumLedsPin25 - 1] = new_color;
 }
 
 // Shift the ceiling strips one position to the right (logically) and
@@ -784,17 +787,17 @@ void ShiftUnderCabinetRight(CRGB new_color) {
 // feeds into pin 16 (natural wiring) so the animation crosses over.
 void ShiftCeilingRight(CRGB new_color) {
   // Shift pin 16 right (natural order, increasing index)
-  for (int i = NUM_LEDS_PIN16 - 1; i > 0; i--) {
+  for (int i = kNumLedsPin16 - 1; i > 0; i--) {
     leds_pin16[i] = leds_pin16[i - 1];
   }
   // Crossover: pin 17 rightmost logical (physical index 0) → pin 16 leftmost
   leds_pin16[0] = leds_pin17[0];
   // Shift pin 17 right in logical order (decreasing physical index)
-  for (int i = 0; i < NUM_LEDS_PIN17 - 1; i++) {
+  for (int i = 0; i < kNumLedsPin17 - 1; i++) {
     leds_pin17[i] = leds_pin17[i + 1];
   }
   // Inject at pin 17 leftmost logical (physical index N-1)
-  leds_pin17[NUM_LEDS_PIN17 - 1] = new_color;
+  leds_pin17[kNumLedsPin17 - 1] = new_color;
 }
 
 // Rainbow animation: shift all strips and inject the current hue.
@@ -802,8 +805,8 @@ void ShiftCeilingRight(CRGB new_color) {
 // happens when enough time has elapsed for one propagation step.
 void UpdateRainbow() {
   unsigned long now = millis();
-  int longest_run = max((int)NUM_LEDS_PIN25, (int)(NUM_LEDS_PIN17 + NUM_LEDS_PIN16));
-  unsigned long shift_interval = RAINBOW_PROPAGATION_MS / longest_run;
+  int longest_run = max((int)kNumLedsPin25, (int)(kNumLedsPin17 + kNumLedsPin16));
+  unsigned long shift_interval = kRainbowPropagationMs / longest_run;
 
   if (now - millis_of_last_rainbow_shift >= shift_interval) {
     millis_of_last_rainbow_shift = now;
@@ -823,13 +826,13 @@ void UpdateRainbow() {
 void SetStripPixel(uint8_t strip, int pos, CRGB color) {
   switch (strip) {
     case 0:
-      if (pos >= 0 && pos < NUM_LEDS_PIN25) leds_pin25[pos] = color;
+      if (pos >= 0 && pos < kNumLedsPin25) leds_pin25[pos] = color;
       break;
     case 1:
-      if (pos >= 0 && pos < NUM_LEDS_PIN17) leds_pin17[pos] = color;
+      if (pos >= 0 && pos < kNumLedsPin17) leds_pin17[pos] = color;
       break;
     case 2:
-      if (pos >= 0 && pos < NUM_LEDS_PIN16) leds_pin16[pos] = color;
+      if (pos >= 0 && pos < kNumLedsPin16) leds_pin16[pos] = color;
       break;
   }
 }
@@ -837,9 +840,9 @@ void SetStripPixel(uint8_t strip, int pos, CRGB color) {
 // Return the length of a strip by index.
 int StripLength(uint8_t strip) {
   switch (strip) {
-    case 0: return NUM_LEDS_PIN25;
-    case 1: return NUM_LEDS_PIN17;
-    case 2: return NUM_LEDS_PIN16;
+    case 0: return kNumLedsPin25;
+    case 1: return kNumLedsPin17;
+    case 2: return kNumLedsPin16;
     default: return 0;
   }
 }
@@ -848,12 +851,12 @@ int StripLength(uint8_t strip) {
 // active spot that still has significant lifetime remaining.
 bool IsTooCloseToActiveSpot(uint8_t strip, uint8_t pos) {
   unsigned long now = millis();
-  for (int i = 0; i < TWINKLE_MAX_ACTIVE; i++) {
+  for (int i = 0; i < kTwinkleMaxActive; i++) {
     if (!twinkle_spots[i].active) continue;
     if (twinkle_spots[i].strip != strip) continue;
     // "Significant time left" = less than halfway through its lifetime.
     unsigned long age = now - twinkle_spots[i].birth_ms;
-    if (age > TWINKLE_SPOT_LIFETIME / 2) continue;
+    if (age > kTwinkleSpotLifetime / 2) continue;
     // Too close if within ±2 of an active bright spot.
     int dist = abs((int)pos - (int)twinkle_spots[i].position);
     if (dist <= 2) return true;
@@ -864,15 +867,15 @@ bool IsTooCloseToActiveSpot(uint8_t strip, uint8_t pos) {
 // Spawn a new twinkle spot in the first available slot.
 // Tries a few random positions to avoid landing on or next to a
 // still-bright spot; gives up after a handful of attempts.
-#define TWINKLE_SPAWN_ATTEMPTS 5
+constexpr int kTwinkleSpawnAttempts = 5;
 void SpawnTwinkleSpot() {
-  for (int i = 0; i < TWINKLE_MAX_ACTIVE; i++) {
+  for (int i = 0; i < kTwinkleMaxActive; i++) {
     if (!twinkle_spots[i].active) {
       uint8_t strip = random(3);
       uint8_t pos = random(StripLength(strip));
 
       // Try to find a position that isn't crowded.
-      for (int attempt = 0; attempt < TWINKLE_SPAWN_ATTEMPTS; attempt++) {
+      for (int attempt = 0; attempt < kTwinkleSpawnAttempts; attempt++) {
         if (!IsTooCloseToActiveSpot(strip, pos)) break;
         strip = random(3);
         pos = random(StripLength(strip));
@@ -885,7 +888,7 @@ void SpawnTwinkleSpot() {
       if (twinkle_monochrome) {
         twinkle_spots[i].hue = twinkle_mono_hue;
       } else {
-        uint8_t palette_index = random(TWINKLE_PALETTE_SIZE);
+        uint8_t palette_index = random(kTwinklePaletteSize);
         twinkle_spots[i].hue = twinkle_palette[palette_index];
         twinkle_mono_hue = twinkle_palette[palette_index];  // latch for mono toggle
       }
@@ -900,17 +903,17 @@ void SpawnTwinkleSpot() {
 // Refresh active twinkle spots: fade in over lifetime, spread to neighbors.
 void UpdateTwinkleSpots() {
   unsigned long now = millis();
-  for (int i = 0; i < TWINKLE_MAX_ACTIVE; i++) {
+  for (int i = 0; i < kTwinkleMaxActive; i++) {
     if (!twinkle_spots[i].active) continue;
 
     unsigned long age = now - twinkle_spots[i].birth_ms;
-    if (age > TWINKLE_SPOT_LIFETIME) {
+    if (age > kTwinkleSpotLifetime) {
       twinkle_spots[i].active = false;
       continue;
     }
 
     // Brightness ramps from 0 → 255 over the first half, then holds at 255.
-    float fraction = (float)age / TWINKLE_SPOT_LIFETIME;
+    float fraction = (float)age / kTwinkleSpotLifetime;
     uint8_t brightness;
     if (fraction < 0.5) {
       brightness = (uint8_t)(255 * (fraction * 2.0));  // ramp up
@@ -935,9 +938,9 @@ void UpdateTwinkleSpots() {
 // Main Twinkle update — called every loop() when in Twinkle mode.
 void UpdateTwinkle() {
   // Global fade: every LED dims a little each frame.
-  fadeToBlackBy(leds_pin25, NUM_LEDS_PIN25, TWINKLE_FADE_AMOUNT);
-  fadeToBlackBy(leds_pin17, NUM_LEDS_PIN17, TWINKLE_FADE_AMOUNT);
-  fadeToBlackBy(leds_pin16, NUM_LEDS_PIN16, TWINKLE_FADE_AMOUNT);
+  fadeToBlackBy(leds_pin25, kNumLedsPin25, kTwinkleFadeAmount);
+  fadeToBlackBy(leds_pin17, kNumLedsPin17, kTwinkleFadeAmount);
+  fadeToBlackBy(leds_pin16, kNumLedsPin16, kTwinkleFadeAmount);
 
   // Spawn new spots at the configured rate.
   unsigned long now = millis();
@@ -976,7 +979,7 @@ CRGB FireColorFromHeat(uint8_t heat, bool cool) {
 void UpdateFireStrip(CRGB* leds, uint8_t* heat, int num_leds, bool reversed) {
   // Step 1: Cool each cell by a small random amount.
   for (int i = 0; i < num_leds; i++) {
-    heat[i] = qsub8(heat[i], random8(0, ((FIRE_COOLING * 10) / num_leds) + 2));
+    heat[i] = qsub8(heat[i], random8(0, ((kFireCooling * 10) / num_leds) + 2));
   }
 
   // Step 2: Drift heat "upward" (from low index toward high index).
@@ -1001,18 +1004,18 @@ void UpdateFireStrip(CRGB* leds, uint8_t* heat, int num_leds, bool reversed) {
 }
 
 // Main Fire update — called every loop() when in Fire mode.
-// Throttled to FIRE_FRAME_MS so the effect runs at a mellow pace.
+// Throttled to kFireFrameMs so the effect runs at a mellow pace.
 void UpdateFire() {
   unsigned long now = millis();
-  if (now - millis_of_last_fire_frame < FIRE_FRAME_MS) return;
+  if (now - millis_of_last_fire_frame < kFireFrameMs) return;
   millis_of_last_fire_frame = now;
 
   // Pin 25 (under-cabinet): wired right-to-left, fire source at left (reversed).
-  UpdateFireStrip(leds_pin25, heat_pin25, NUM_LEDS_PIN25, true);
+  UpdateFireStrip(leds_pin25, heat_pin25, kNumLedsPin25, true);
   // Pin 17 (ceiling left): wired right-to-left, fire source at left (reversed).
-  UpdateFireStrip(leds_pin17, heat_pin17, NUM_LEDS_PIN17, true);
+  UpdateFireStrip(leds_pin17, heat_pin17, kNumLedsPin17, true);
   // Pin 16 (ceiling right): wired left-to-right, fire source at left (natural).
-  UpdateFireStrip(leds_pin16, heat_pin16, NUM_LEDS_PIN16, false);
+  UpdateFireStrip(leds_pin16, heat_pin16, kNumLedsPin16, false);
   FastLED.show();
 }
 #endif
@@ -1025,7 +1028,7 @@ void UpdateFire() {
  ****************************************************************************/
 
 int GetSwitchPosition() {
-  uint16_t input = analogRead(MODE_SWITCH_PIN);
+  uint16_t input = analogRead(kModeSwitchPin);
   uint8_t val;
 
   if (input < 100) {
@@ -1082,21 +1085,21 @@ int GetDebouncedSwitchPosition() {
     // Animated modes bypass the normal brightness-from-twist path, so
     // if we're arriving from a presence-faded mode (brightness == 0)
     // the lights would stay dark.  Reset to full on any mode change.
-    FastLED.setBrightness(BRIGHTNESS);
-    previous_brightness = BRIGHTNESS;
-    if (next_switch_position == FIRE_MODE_INDEX) {
+    FastLED.setBrightness(kBrightness);
+    previous_brightness = kBrightness;
+    if (next_switch_position == kFireModeIndex) {
       // Entering Fire: zero out heat arrays and reset state.
       memset(heat_pin25, 0, sizeof(heat_pin25));
       memset(heat_pin17, 0, sizeof(heat_pin17));
       memset(heat_pin16, 0, sizeof(heat_pin16));
-      fire_sparking = FIRE_SPARKING;
+      fire_sparking = kFireSparking;
       fire_cool_palette = false;
 #if IS_TWIST_ENABLED
       fire_twist_baseline = twist.getCount();
 #endif
       SetAllLeds(CRGB::Black);
     }
-    if (next_switch_position == RAINBOW_MODE_INDEX) {
+    if (next_switch_position == kRainbowModeIndex) {
       // Entering Rainbow: pick a random starting hue, reset state, and
       // clear the strips so colors grow outward from the left.
       rainbow_hue = random(256);
@@ -1107,13 +1110,13 @@ int GetDebouncedSwitchPosition() {
 #endif
       SetAllLeds(CRGB::Black);
     }
-    if (next_switch_position == TWINKLE_MODE_INDEX) {
+    if (next_switch_position == kTwinkleModeIndex) {
       // Entering Twinkle: clear strips and reset all twinkle state.
-      for (int i = 0; i < TWINKLE_MAX_ACTIVE; i++) {
+      for (int i = 0; i < kTwinkleMaxActive; i++) {
         twinkle_spots[i].active = false;
       }
       twinkle_monochrome = false;
-      millis_between_twinkle_spawns = TWINKLE_DEFAULT_SPAWN_MS;
+      millis_between_twinkle_spawns = kTwinkleDefaultSpawnMs;
       millis_of_last_twinkle_spawn = millis();
 #if IS_TWIST_ENABLED
       twinkle_twist_baseline = twist.getCount();
@@ -1220,7 +1223,7 @@ int ApplyPresenceFade(int brightness, unsigned long timeout) {
 #if IS_FASTLED_ENABLED
 CRGB GetRoutineColor() {
   if (current_time_hours < 0 || sunrise_hours < 0 || sunset_hours < 0) {
-    return mode_color[ROUTINE_MODE_INDEX];
+    return mode_color[kRoutineModeIndex];
   }
   int now     = current_time_hours * 60 + current_time_minutes;
   int sunrise = sunrise_hours     * 60 + sunrise_minutes;
@@ -1229,12 +1232,12 @@ CRGB GetRoutineColor() {
   if(millis() % 5000 < 10) Serial.printf("now: %d  | sunrise: %d |  sunset: %d\n", now, sunrise, sunset);
 
 
-  if (now < sunrise - 60)  return mode_color[NIGHT_MODE_INDEX];   // deep night
+  if (now < sunrise - 60)  return mode_color[kNightModeIndex];   // deep night
   if (now < sunrise + 30)  return mode_color[4];                  // Dishes — near sunrise
   if (now < sunset  - 60)  return mode_color[2];                  // Cook Day
   if (now < sunset)        return mode_color[3];                  // Cook Night — pre-sunset
   if (now < sunset  + 60)  return mode_color[4];                  // Dishes — post-sunset
-  return mode_color[NIGHT_MODE_INDEX];                            // night
+  return mode_color[kNightModeIndex];                            // night
 }
 #endif // IS_FASTLED_ENABLED
 
@@ -1274,7 +1277,7 @@ void FetchWeatherReport() {
 }
 
 void ParseWeatherReport(String raw) {
-  for (int i = 0; i < WEATHER_REPORT_MAX_LENGTH; ++i) {
+  for (int i = 0; i < kWeatherReportMaxLength; ++i) {
     weather_report[i] = "";
   }
 
@@ -1296,14 +1299,14 @@ void ParseWeatherReport(String raw) {
       String token = raw.substring(token_start,i);
       i += 1;
       token_start = i;
-      if (tokens_found < WEATHER_REPORT_MAX_LENGTH) {
+      if (tokens_found < kWeatherReportMaxLength) {
         weather_report[tokens_found] = token;
         tokens_found += 1;
       }
     }
   }
   // Capture the final token after the last delimiter.
-  if (token_start < raw.length() && tokens_found < WEATHER_REPORT_MAX_LENGTH) {
+  if (token_start < raw.length() && tokens_found < kWeatherReportMaxLength) {
     weather_report[tokens_found] = raw.substring(token_start);
   }
 
@@ -1317,7 +1320,7 @@ void ParseWeatherReport(String raw) {
   }
 
   // Scan all tokens for "Sunrise: ..." and "Sunset: ..." entries.
-  for (int i = 1; i < WEATHER_REPORT_MAX_LENGTH; ++i) {
+  for (int i = 1; i < kWeatherReportMaxLength; ++i) {
     if (weather_report[i].startsWith("Sunrise: ")) {
       String t = weather_report[i].substring(9);  // after "Sunrise: "
       int colon = t.indexOf(':');
