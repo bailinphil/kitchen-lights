@@ -158,15 +158,14 @@ String mode_name[] = {
 CRGB mode_color[] = {
   CRGB::Black,       // Standby
   CRGB::White,       // Routine
-  CRGB::Green,       // Cook Day
-  CRGB::Blue,        // Cook Night
-  CRGB::Orange,      // Dishes
+  CRGB::Seashell,    // Cook Day
+  CRGB::LightSalmon, // Cook Night
+  CRGB::DarkOrange,  // Dishes
   CRGB::Red,         // Night
   CRGB::OrangeRed,   // Fire (fallback — Fire has its own update path)
   CRGB::Goldenrod,   // Rainbow (unused — Rainbow has its own update path)
-  CRGB::ForestGreen, // Twinkle
-  CRGB::DimGray,     // Away
-  CRGB::Black,
+  CRGB::ForestGreen, // Twinkle (unused - Twinkle has its own palette)
+  CRGB::Black,     // Away
 };
 #endif
 
