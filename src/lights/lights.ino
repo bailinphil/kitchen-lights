@@ -231,16 +231,17 @@ int sunset_minutes = -1;
 #if IS_PRESENCE_ENABLED
 #include "SparkFun_STHS34PF80_Arduino_Library.h"
 STHS34PF80_I2C presence_sensor;
-constexpr int kPresenceSda = 26;
-constexpr int kPresenceScl = 27;
+constexpr int kPresenceSda = 4;
+constexpr int kPresenceScl = 13;
+constexpr int kPresenceIntPin = 14;  // wired but not yet used; available for interrupt-driven reads
 
 // Values to fill with presence and motion data
 int16_t presence_val = 0;
 int16_t motion_val = 0;
 float temperature_val = 0;
 unsigned long millis_of_last_presence_detection = 0;
-unsigned long millis_of_last_presence_check = 0;
 unsigned long millis_of_presence_fade_in_start = 0;
+volatile bool presence_data_ready = false;
 constexpr unsigned long kPresenceTimeoutMs = 20000;        // Night mode: 20 seconds
 constexpr unsigned long kRoutinePresenceTimeoutMs = 60000;  // Routine mode: 1 minute
 constexpr unsigned long kFadeDurationMs = 3000;
@@ -357,6 +358,10 @@ void SetupTwist() {
 
 #if IS_PRESENCE_ENABLED
 // https://github.com/sparkfun/SparkFun_STHS34PF80_Arduino_Library
+void IRAM_ATTR OnPresenceInterrupt() {
+  presence_data_ready = true;
+}
+
 void SetupPresence() {
     Wire1.begin(kPresenceSda, kPresenceScl);
     // Establish communication with device on its own I2C bus
@@ -364,6 +369,15 @@ void SetupPresence() {
       Serial.println("Error setting up presence sensor - please check wiring.");
       while(1);
     }
+
+    // Route presence+motion flags to the INT pin, latched until
+    // the status register is read.
+    presence_sensor.setTmosRouteInterrupt(STHS34PF80_TMOS_INT_OR);
+    presence_sensor.setTmosInterruptOR(STHS34PF80_TMOS_INT_MOTION_PRESENCE);
+    presence_sensor.setInterruptPulsed(false);  // latched mode
+
+    pinMode(kPresenceIntPin, INPUT);
+    attachInterrupt(digitalPinToInterrupt(kPresenceIntPin), OnPresenceInterrupt, CHANGE);
 }
 #endif
 
@@ -569,11 +583,12 @@ void loop(){
 
 #if IS_PRESENCE_ENABLED
   int detected_presence = 0;
-  if (millis() - millis_of_last_presence_check > 150) {
-    millis_of_last_presence_check = millis();
+  if (presence_data_ready) {
+    presence_data_ready = false;
     detected_presence = CheckPresence();
   }
   if (detected_presence != 0) {
+    Serial.println("Presence interrupt fired, motion and presence detected.");
     // If lights were off or fading out, start a fade-in.
     unsigned long millis_since_presence = millis() - millis_of_last_presence_detection;
     if (millis_since_presence > kPresenceTimeoutMs) {
@@ -1149,34 +1164,27 @@ void ClampTwistWindow(int current_twist_position) {
  ****************************************************************************/
 #if IS_PRESENCE_ENABLED
 int16_t CheckPresence() {
-  sths34pf80_tmos_drdy_status_t data_ready;
-  if (presence_sensor.getDataReady(&data_ready) != 0) {
-    Serial.println("I2C error reading presence data-ready");
+  // Called when the INT pin has fired, so data is ready — go straight
+  // to reading the status register (which also clears the interrupt latch).
+  sths34pf80_tmos_func_status_t status;
+  if (presence_sensor.getStatus(&status) != 0) {
+    Serial.println("I2C error reading presence status");
     return 0;
   }
 
-  // Check whether sensor has new data - run through loop if data is ready
-  if (data_ready.drdy == 1) {
-    sths34pf80_tmos_func_status_t status;
-    if (presence_sensor.getStatus(&status) != 0) {
-      Serial.println("I2C error reading presence status");
+  // Require motion to corroborate presence detection.
+  // The presence flag alone is prone to false positives from ambient
+  // temperature drift, so we only trigger when motion is also detected.
+  if (status.pres_flag == 1 && status.mot_flag == 1) {
+    // Presence Units: cm^-1
+    if (presence_sensor.getPresenceValue(&presence_val) != 0) {
+      Serial.println("I2C error reading presence value");
       return 0;
     }
-
-    // Require motion to corroborate presence detection.
-    // The presence flag alone is prone to false positives from ambient
-    // temperature drift, so we only trigger when motion is also detected.
-    if (status.pres_flag == 1 && status.mot_flag == 1) {
-      // Presence Units: cm^-1
-      if (presence_sensor.getPresenceValue(&presence_val) != 0) {
-        Serial.println("I2C error reading presence value");
-        return 0;
-      }
-      Serial.print("Presence+Motion: ");
-      Serial.print(presence_val);
-      Serial.println(" cm^-1");
-      return presence_val;
-    }
+    Serial.print("Presence+Motion: ");
+    Serial.print(presence_val);
+    Serial.println(" cm^-1");
+    return presence_val;
   }
 
   return 0;
