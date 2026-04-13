@@ -2,21 +2,31 @@ from datetime import datetime
 import json
 import urllib.request
 import time
-from weather_api_key import *
+from weather_api_key import weather_api_key, lat, lon
 
 
 def main():
     nowStr = humanStrFromTimestamp(datetime.now())
 
     weather = ""
-    with open('weather.txt','r',encoding='utf8') as weatherFile:
-        weather = parseWeather(weatherFile.read())
+    isNewWeatherNeeded = False
 
-    if True or len(weather) == 0 or nowStr.endswith('0'):
+
+    try:
+        with open('weather.txt','r',encoding='utf8') as weatherFile:
+            weather = parseWeather(weatherFile.read())
+
+        if len(weather) == 0 or nowStr.endswith('0'):
+            isNewWeatherNeeded = True
+    except:
+        isNewWeatherNeeded = True
+
+    if isNewWeatherNeeded:
         weather = fetchWeather()
 
     with open('weather.txt','w',encoding='utf8') as weatherFile:
         weatherFile.write(f"{nowStr}|{weather}")
+
 
 def humanStrFromTimestamp(ts):
     if type(ts) is int:
@@ -37,15 +47,21 @@ def parseWeather(currentFile):
 
 
 def fetchWeather():
-    url = "https://api.openweathermap.org/data/3.0/onecall?lat=40.4846938&lon=-79.9370109&units=imperial&appid="
-    url += weather_api_key
+    print(f"Requesting new weather at {time.strftime('%l:%M%p %z on %b %d, %Y')}")
+
+    url = f"https://api.openweathermap.org/data/3.0/onecall?lat={lat}&lon={lon}&units=imperial&appid={weather_api_key}"
 
     weatherJson = urllib.request.urlopen(url).read()
     weather = json.loads(weatherJson)
     # the first entry [0] appears to be in the recent past / current.
+    tempNow = float(weather["current"]["temp"])
+    precipIn15m = -1.0
+    if "minutely" in weather:
+        precipIn15m = float(weather["minutely"][15]["precipitation"])
+    result = f"Curnt: {tempNow:.0f}^ {precipIn15m:.0f}%"
     tempIn4h = float(weather["hourly"][4]["temp"])
     precipIn4h = float(weather["hourly"][4]["pop"]) * 100
-    result = f"In 4h: {tempIn4h:.0f}^ {precipIn4h:.0f}%"
+    result += f"|In 4h: {tempIn4h:.0f}^ {precipIn4h:.0f}%"
     tempIn8h = float(weather["hourly"][8]["temp"])
     precipIn8h = float(weather["hourly"][8]["pop"]) * 100
     result += f"|In 8h: {tempIn8h:.0f}^ {precipIn8h:.0f}%"
@@ -57,9 +73,11 @@ def fetchWeather():
     sunriseTimeStr = humanStrFromTimestamp(sunriseTime)
     result += f"|Sunrise: {sunriseTimeStr}"
     sunsetTimeStr = humanStrFromTimestamp(sunsetTime)
-    result += f"|Sunset: {sunsetTimeStr}"
+    result += f"|Sunset: {sunsetTimeStr}\n"
     return result
-
-
+    
+    
 if __name__ == "__main__":
     main()
+
+
