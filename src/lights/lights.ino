@@ -374,10 +374,10 @@ void SetupPresence() {
     // the status register is read.
     presence_sensor.setTmosRouteInterrupt(STHS34PF80_TMOS_INT_OR);
     presence_sensor.setTmosInterruptOR(STHS34PF80_TMOS_INT_MOTION_PRESENCE);
-    presence_sensor.setInterruptPulsed(false);  // latched mode
+    presence_sensor.setInterruptPulsed(1);  // latched: INT stays low until status is read
 
     pinMode(kPresenceIntPin, INPUT);
-    attachInterrupt(digitalPinToInterrupt(kPresenceIntPin), OnPresenceInterrupt, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(kPresenceIntPin), OnPresenceInterrupt, FALLING);
 }
 #endif
 
@@ -1164,8 +1164,13 @@ void ClampTwistWindow(int current_twist_position) {
  ****************************************************************************/
 #if IS_PRESENCE_ENABLED
 int16_t CheckPresence() {
-  // Called when the INT pin has fired, so data is ready — go straight
-  // to reading the status register (which also clears the interrupt latch).
+  // Clear the data-ready flag so the sensor will process its next
+  // measurement cycle. Without this, the algorithm stalls and no
+  // further presence/motion interrupts are generated.
+  sths34pf80_tmos_drdy_status_t data_ready;
+  presence_sensor.getDataReady(&data_ready);
+
+  // Read the status register (clears the interrupt latch on the INT pin).
   sths34pf80_tmos_func_status_t status;
   if (presence_sensor.getStatus(&status) != 0) {
     Serial.println("I2C error reading presence status");
