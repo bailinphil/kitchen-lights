@@ -516,6 +516,13 @@ int16_t CheckPresence() {
   return 0;
 }
 
+// Returns the fraction of brightness remaining during a fade-out,
+// given how long ago the fade-out started. 1.0 = just started, 0.0 = fully off.
+float FadeOutBrightnessRatio(unsigned long fade_out_elapsed) {
+  if (fade_out_elapsed >= kFadeDurationMs) return 0.0;
+  return 1.0 - (1.0 * fade_out_elapsed / kFadeDurationMs);
+}
+
 // Fade brightness in when presence is detected and out when it times out.
 // timeout controls how long after the last detection before fading begins.
 int ApplyPresenceFade(int brightness, unsigned long timeout) {
@@ -528,8 +535,7 @@ int ApplyPresenceFade(int brightness, unsigned long timeout) {
   }
   // Phase 2: fading out after timeout.
   if (millis_since_presence > timeout) {
-    float amount_fade_complete = 1.0 * (millis_since_presence - timeout) / kFadeDurationMs;
-    int brightness_reduction = (int)(255 * amount_fade_complete);
+    int brightness_reduction = (int)(255 * (1.0 - FadeOutBrightnessRatio(millis_since_presence - timeout)));
     return max(0, brightness - brightness_reduction);
   }
 

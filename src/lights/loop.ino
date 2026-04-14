@@ -66,9 +66,13 @@ void loop(){
   if (detected_presence != 0) {
     Serial.println("Presence interrupt fired, motion and presence detected.");
     // If lights were off or fading out, start a fade-in.
+    // If mid-fade-out, backdate the fade-in start so it resumes from current
+    // brightness instead of snapping to darkness first.
     unsigned long millis_since_presence = millis() - millis_of_last_presence_detection;
     if (millis_since_presence > kPresenceTimeoutMs) {
-      millis_of_presence_fade_in_start = millis();
+      float brightness_remaining = FadeOutBrightnessRatio(millis_since_presence - kPresenceTimeoutMs);
+      unsigned long fade_in_already_done = (unsigned long)(brightness_remaining * kFadeInDurationMs);
+      millis_of_presence_fade_in_start = millis() - fade_in_already_done;
     }
     millis_of_last_presence_detection = millis();
   }
@@ -110,7 +114,7 @@ void loop(){
     if (next_switch_position == kNightModeIndex) {
       requested_brightness = ApplyPresenceFade(requested_brightness);
     } else if (next_switch_position == kRoutineModeIndex) {
-      requested_brightness = ApplyPresenceFade(requested_brightness, kRoutinePresenceTimeoutMs);
+      requested_brightness = ApplyPresenceFade(requested_brightness);
     }
 #endif // IS_PRESENCE_ENABLED && IS_FASTLED_ENABLED
 

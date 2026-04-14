@@ -242,10 +242,10 @@ float temperature_val = 0;
 unsigned long millis_of_last_presence_detection = 0;
 unsigned long millis_of_presence_fade_in_start = 0;
 volatile bool presence_data_ready = false;
-constexpr unsigned long kPresenceTimeoutMs = 20000;        // Night mode: 20 seconds
-constexpr unsigned long kRoutinePresenceTimeoutMs = 60000;  // Routine mode: 1 minute
+constexpr unsigned long kPresenceTimeoutMs = 120000;        // 2 minutes
 constexpr unsigned long kFadeDurationMs = 3000;
 constexpr unsigned long kFadeInDurationMs = 3000;
+float FadeOutBrightnessRatio(unsigned long fade_out_elapsed);
 int ApplyPresenceFade(int brightness, unsigned long timeout = kPresenceTimeoutMs);
 #endif // IS_PRESENCE_ENABLED
 
