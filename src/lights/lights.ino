@@ -1094,6 +1094,12 @@ int GetDebouncedSwitchPosition() {
       millis() - millis_when_candidate_changed >= 50) {
     committed_switch_position = candidate_switch_position;
     next_switch_position = committed_switch_position;
+#if IS_DISPLAY_ENABLED
+    // mode just changed, and we want the display to refresh immediately.
+    // to do this, pretend we have never attempted to update the display
+    // before. (this variable normally prevents us from spamming the bus.)
+    millis_of_last_display_attempt = 0;
+#endif
 #if IS_FASTLED_ENABLED
     is_led_dirty = true;
     // Animated modes bypass the normal brightness-from-twist path, so
