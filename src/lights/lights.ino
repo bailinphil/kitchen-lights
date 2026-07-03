@@ -53,11 +53,15 @@ constexpr int kBrightness = 20;
 
 // Under-cabinet run (pin 25), wired right-to-left in the real world.
 // Logical addressing is left-to-right: D, C, B, A.
-constexpr int kUnderCabRight = 25;   // under the rightmost cabinet
-constexpr int kOverSink = 25;        // around and over the sink
+constexpr int kUnderCabRight = 19;   // under the rightmost cabinet
+constexpr int kSinkRight = 15;       // wall climbing right of the sink
+constexpr int kOverSink = 35;        // over the sink
+constexpr int kSinkLeft = 15;
 constexpr int kUnderCabCorner = 25;  // left wall cabinet 1
+constexpr int kStove = 14;
 constexpr int kUnderCabLeft = 25;    // left wall cabinet 2
-constexpr int kNumLedsPin25 = kUnderCabRight + kOverSink + kUnderCabCorner + kUnderCabLeft;
+constexpr int kNumLedsPin25 = kUnderCabRight + kSinkRight + kOverSink + 
+                              kSinkLeft + kUnderCabCorner + kStove + kUnderCabLeft;
 CRGB leds_pin25[kNumLedsPin25];
 
 // Ceiling run — two pins acting as one logical strip, left to right.
