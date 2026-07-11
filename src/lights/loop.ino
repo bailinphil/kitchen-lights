@@ -6,27 +6,16 @@
 
 void loop(){
   delay(5);
-  bool is_air_report_just_sent = false;
 #if IS_AIR_SENSOR_ENABLED
+  // Every ~5 minutes, read the sensors and hand the report to the network
+  // task, which sends it. Weather fetching lives entirely on that task too
+  // (see network.ino), so the render loop never blocks on the network.
   unsigned long millis_since_air_report = millis() - millis_when_air_last_reported;
-  // get a new air report every every ~five minutes, but a prime number of millis
-  // so that we don't try to fetch a weather report and report the air quality
-  // on the same time through loop.
   if (millis_since_air_report > 299993) {
     ReportAirQuality();
-    is_air_report_just_sent = true;
     millis_when_air_last_reported = millis();
   }
 #endif // IS_AIR_SENSOR_ENABLED
-
-#if IS_WIFI_ENABLED
-  // updated weather info
-  unsigned long millis_since_weather_fetch = millis() - millis_when_weather_last_fetched;
-  // fetch weather every 30s (because it also updates the time seen on the display)
-  if ((false == is_air_report_just_sent) && millis_since_weather_fetch > 30000) {
-    FetchWeatherReport();
-  }
-#endif // IS_WIFI_ENABLED
 
 #if IS_TWIST_ENABLED
   if (twist.isClicked()) {

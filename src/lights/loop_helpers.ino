@@ -5,7 +5,10 @@
  ****************************************************************************/
 #if IS_DISPLAY_ENABLED
 String PrepareTopMessage(uint8_t switch_pos) {
-  String result = weather_report[0] + " " + mode_name[switch_pos];
+  LockWeatherState();
+  String report0 = weather_report[0];
+  UnlockWeatherState();
+  String result = report0 + " " + mode_name[switch_pos];
   if (!result.equals(previous_message_top)) {
     is_display_dirty = true;
     previous_message_top = result;
@@ -14,11 +17,13 @@ String PrepareTopMessage(uint8_t switch_pos) {
 }
 
 String PrepareBottomMessage() {
+  LockWeatherState();
   if (current_weather_report_display >= kWeatherReportMaxLength ||
       weather_report[current_weather_report_display].length() == 0) {
     current_weather_report_display = 1;
   }
   String result = weather_report[current_weather_report_display];
+  UnlockWeatherState();
   if (millis() - millis_when_bottom_row_updated > 3000) {
     millis_when_bottom_row_updated = millis();
     current_weather_report_display += 1;
@@ -561,12 +566,23 @@ int ApplyPresenceFade(int brightness, unsigned long timeout) {
 // if time data hasn't been parsed yet.
 #if IS_FASTLED_ENABLED
 CRGB GetRoutineColor() {
-  if (current_time_hours < 0 || sunrise_hours < 0 || sunset_hours < 0) {
+  // Snapshot the shared time state under the lock so the network task can't
+  // rewrite it mid-read (a torn time would pick the wrong color).
+  LockWeatherState();
+  int now_hours   = current_time_hours;
+  int now_minutes = current_time_minutes;
+  int sr_hours    = sunrise_hours;
+  int sr_minutes  = sunrise_minutes;
+  int ss_hours    = sunset_hours;
+  int ss_minutes  = sunset_minutes;
+  UnlockWeatherState();
+
+  if (now_hours < 0 || sr_hours < 0 || ss_hours < 0) {
     return mode_color[kRoutineModeIndex];
   }
-  int now     = current_time_hours * 60 + current_time_minutes;
-  int sunrise = sunrise_hours     * 60 + sunrise_minutes;
-  int sunset  = sunset_hours      * 60 + sunset_minutes;
+  int now     = now_hours * 60 + now_minutes;
+  int sunrise = sr_hours  * 60 + sr_minutes;
+  int sunset  = ss_hours  * 60 + ss_minutes;
 
   if(millis() % 5000 < 10) Serial.printf("now: %d  | sunrise: %d |  sunset: %d\n", now, sunrise, sunset);
 
@@ -580,104 +596,8 @@ CRGB GetRoutineColor() {
 }
 #endif // IS_FASTLED_ENABLED
 
-#if IS_WIFI_ENABLED
-void FetchWeatherReport() {
-  // wait for WiFi connection
-  Serial.println("about to try to use wifi");
-  if ((wifi_multi.run() == WL_CONNECTED)) {
-
-    HTTPClient http;
-    http.begin(WEATHER_URL);
-    Serial.print("Requesting ");
-    Serial.println(WEATHER_URL);
-    // start connection and send HTTP header
-    int http_code = http.GET();
-
-    // http_code will be negative on error
-    millis_when_weather_last_fetched = millis();
-    if (http_code > 0) {
-      // HTTP header has been send and Server response header has been handled
-      // file found at server
-      if (http_code == HTTP_CODE_OK) {
-        String payload = http.getString();
-        ParseWeatherReport(payload);
-        Serial.print("Weather report: ");
-        Serial.print(millis_when_weather_last_fetched);
-        Serial.print(" - ");
-        Serial.println(payload);
-
-      }
-    } else {
-      Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(http_code).c_str());
-    }
-
-    http.end();
-  }
-}
-
-void ParseWeatherReport(String raw) {
-  for (int i = 0; i < kWeatherReportMaxLength; ++i) {
-    weather_report[i] = "";
-  }
-
-  int tokens_found = 0;
-  int token_start = 0;
-  for (int i = 0; i < raw.length(); ++i) {
-    // expressing the degree symbol seems complex. This method seems to work for me:
-    // https://forum.arduino.cc/t/solved-how-to-print-the-degree-symbol-extended-ascii/438685/40
-    // but I don't yet know how to put that character into my text file. So instead,
-    // in the text file on the server I'm outputting ^ character where ° should go.
-    // This little check swaps the ^ for a character which appears as a degree symbol on
-    // my display.
-    if (raw.charAt(i) == '^') {
-      raw.setCharAt(i, char(223));
-    }
-
-    // Use the | character as a delimiter to mark what info should be
-    if (raw.charAt(i) == '|') {
-      String token = raw.substring(token_start,i);
-      i += 1;
-      token_start = i;
-      if (tokens_found < kWeatherReportMaxLength) {
-        weather_report[tokens_found] = token;
-        tokens_found += 1;
-      }
-    }
-  }
-  // Capture the final token after the last delimiter.
-  if (token_start < raw.length() && tokens_found < kWeatherReportMaxLength) {
-    weather_report[tokens_found] = raw.substring(token_start);
-  }
-
-  // Parse current time from weather_report[0] (format "H:MM" or "HH:MM").
-  {
-    int colon = weather_report[0].indexOf(':');
-    if (colon > 0) {
-      current_time_hours   = weather_report[0].substring(0, colon).toInt();
-      current_time_minutes = weather_report[0].substring(colon + 1).toInt();
-    }
-  }
-
-  // Scan all tokens for "Sunrise: ..." and "Sunset: ..." entries.
-  for (int i = 1; i < kWeatherReportMaxLength; ++i) {
-    if (weather_report[i].startsWith("Sunrise: ")) {
-      String t = weather_report[i].substring(9);  // after "Sunrise: "
-      int colon = t.indexOf(':');
-      if (colon > 0) {
-        sunrise_hours   = t.substring(0, colon).toInt();
-        sunrise_minutes = t.substring(colon + 1).toInt();
-      }
-    } else if (weather_report[i].startsWith("Sunset: ")) {
-      String t = weather_report[i].substring(8);  // after "Sunset: "
-      int colon = t.indexOf(':');
-      if (colon > 0) {
-        sunset_hours   = t.substring(0, colon).toInt();
-        sunset_minutes = t.substring(colon + 1).toInt();
-      }
-    }
-  }
-}
-#endif // IS_WIFI_ENABLED
+// FetchWeatherReport() and ParseWeatherReport() now live in network.ino, since
+// they run on the network task rather than in the render loop.
 
 /*****************************************************************************
  *                                                                           *
@@ -747,33 +667,10 @@ void ReportAirQuality() {
   air_url += NOX_PREFIX;
   air_url += nox_index;
   Serial.println(air_url);
-  SendAirReport(air_url);
-}
-
-void SendAirReport(String air_url) {
-  // wait for WiFi connection
-  if ((wifi_multi.run() == WL_CONNECTED)) {
-
-    HTTPClient http;
-    http.begin(air_url);
-    // start connection and send HTTP header
-    int http_code = http.GET();
-
-    // http_code will be negative on error
-    if (http_code > 0) {
-      // HTTP header has been send and Server response header has been handled
-      // file found at server
-      if (http_code == HTTP_CODE_OK) {
-        millis_when_air_last_reported = millis();
-        String payload = http.getString();
-        Serial.println(payload);
-      }
-    } else {
-      Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(http_code).c_str());
-    }
-
-    http.end();
-  }
+  // Hand the report to the network task instead of sending it here, so the
+  // I2C sensor reads above stay on the render loop but the blocking HTTP send
+  // does not. EnqueueAirReport() and SendAirReport() live in network.ino.
+  EnqueueAirReport(air_url);
 }
 #else
 // if the air sensor is enabled, but the wi-fi is not, we would like to pretend to send

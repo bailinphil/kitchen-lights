@@ -30,9 +30,24 @@
 #include <WiFi.h>
 #include <WiFiMulti.h>
 #include <HTTPClient.h>
+#include <freertos/semphr.h>
+#include <freertos/queue.h>
 WiFiMulti wifi_multi;
 #include "network_credentials.h"
 unsigned long millis_when_weather_last_fetched = 0;
+
+// All outbound network I/O runs on a dedicated FreeRTOS task (see network.ino)
+// pinned to core 0, so a slow or failing request can never stall the render
+// loop (which runs on core 1). These handles are created in SetupWifi().
+SemaphoreHandle_t weather_state_mutex = NULL;  // guards weather_report[] + parsed time ints
+QueueHandle_t air_report_queue = NULL;         // render loop -> network task
+TaskHandle_t network_task_handle = NULL;
+
+// Air reports are handed to the network task as a fully-formed URL in a fixed
+// buffer. FreeRTOS queues copy by value, so we can't pass a heap-backed String.
+struct AirReport {
+  char url[384];
+};
 #endif // IS_WIFI_ENABLED
 
 #if IS_AIR_SENSOR_ENABLED
@@ -229,6 +244,18 @@ int sunset_hours = -1;
 int sunset_minutes = -1;
 #endif // DISPLAY or FASTLED
 
+// Guard the shared weather/time state above: the network task writes it while
+// the render loop reads it. Hold time is bounded (a copy or a single parse, no
+// blocking calls), so the loop only ever waits microseconds. No-ops when WiFi
+// is disabled, since then there is no second thread.
+#if IS_WIFI_ENABLED
+inline void LockWeatherState()   { if (weather_state_mutex) xSemaphoreTake(weather_state_mutex, portMAX_DELAY); }
+inline void UnlockWeatherState() { if (weather_state_mutex) xSemaphoreGive(weather_state_mutex); }
+#else
+inline void LockWeatherState()   {}
+inline void UnlockWeatherState() {}
+#endif
+
 /*
  * Presence
  */
@@ -390,6 +417,22 @@ void SetupWifi() {
   wifi_multi.addAP(STA_SSID_PHONE, STA_PASS_PHONE);
   wifi_multi.addAP(STA_SSID_PROTO, STA_PASS_PROTO);
   millis_when_weather_last_fetched = millis();
+
+  weather_state_mutex = xSemaphoreCreateMutex();
+  air_report_queue = xQueueCreate(2, sizeof(AirReport));
+
+  // Spawn the background network task. FreeRTOS (the OS underneath the Arduino
+  // core) runs it concurrently with loop(); we pin it to core 0 (PRO_CPU) while
+  // the Arduino loop() runs on core 1 (APP_CPU), so blocking HTTP here never
+  // stalls rendering or input. The arguments, in order, are:
+  //   NetworkTask          - the function to run as the task (never returns)
+  //   "network"            - a name, used only in debug output / crash traces
+  //   8192                 - stack size in bytes reserved for this task
+  //   NULL                 - optional argument passed to the task (we need none)
+  //   1                    - priority (same as the Arduino loop task)
+  //   &network_task_handle - out-param: receives a handle to the created task
+  //   0                    - which core to pin it to (0 = PRO_CPU)
+  xTaskCreatePinnedToCore(NetworkTask, "network", 8192, NULL, 1, &network_task_handle, 0);
 }
 #endif // IS_WIFI_ENABLED
 
