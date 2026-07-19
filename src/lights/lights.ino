@@ -90,8 +90,8 @@ CRGB leds_pin25[kNumLedsPin25];
 // Ceiling run — two pins acting as one logical strip, left to right.
 // Pin 17: wired right-to-left (reversed in software).
 // Pin 16: wired left-to-right (natural order).
-constexpr int kCeilingLeft = 50;   // pin 17
-constexpr int kCeilingRight = 50;  // pin 16
+constexpr int kCeilingLeft = 147;   // pin 17
+constexpr int kCeilingRight = 120;  // pin 16
 constexpr int kNumLedsPin17 = kCeilingLeft;
 constexpr int kNumLedsPin16 = kCeilingRight;
 CRGB leds_pin17[kNumLedsPin17];
