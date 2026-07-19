@@ -29,12 +29,20 @@
 #if IS_WIFI_ENABLED
 #include <WiFi.h>
 #include <WiFiMulti.h>
-#include <HTTPClient.h>
 #include <freertos/semphr.h>
 #include <freertos/queue.h>
 WiFiMulti wifi_multi;
 #include "network_credentials.h"
 unsigned long millis_when_weather_last_fetched = 0;
+
+// Reliability counters surfaced as "Net: XX%" in the display rotation. Written
+// only by the network task (single writer), read by the render loop. Plain
+// uint32_t rather than mutex-guarded: aligned 32-bit access is atomic on the
+// ESP32, and with one writer neither counter can tear. Added while chasing
+// issue #4 (the DNS resolver returning 0.0.0.0 after its record's TTL lapsed);
+// kept as an ongoing readout of how often calls are getting through.
+uint32_t network_calls_attempted = 0;
+uint32_t network_calls_succeeded = 0;
 
 // All outbound network I/O runs on a dedicated FreeRTOS task (see network.ino)
 // pinned to core 0, so a slow or failing request can never stall the render

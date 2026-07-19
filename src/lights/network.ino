@@ -19,46 +19,180 @@
 constexpr int32_t  kHttpConnectTimeoutMs = 1500;
 constexpr uint16_t kHttpTimeoutMs        = 1500;
 
+// Extract the hostname from WEATHER_URL ("http://host/path...") once, so the DNS
+// probe below can resolve exactly the host the request uses without hardcoding
+// it. Parsed a single time and cached in a static.
+const char* WeatherHost() {
+  static String host;
+  if (host.length() == 0) {
+    String url = WEATHER_URL;
+    int start = url.indexOf("://");
+    start = (start < 0) ? 0 : start + 3;
+    int end = url.indexOf('/', start);
+    if (end < 0) end = url.length();
+    host = url.substring(start, end);
+  }
+  return host.c_str();
+}
+
+// Split an http URL into host and path+query: "http://host/a?b=c" yields
+// host="host", path="/a?b=c". Returns false if it isn't an http-style URL.
+bool SplitUrl(const String& url, String& host, String& path) {
+  int start = url.indexOf("://");
+  if (start < 0) return false;
+  start += 3;
+  int slash = url.indexOf('/', start);
+  if (slash < 0) {
+    host = url.substring(start);
+    path = "/";
+  } else {
+    host = url.substring(start, slash);
+    path = url.substring(slash);
+  }
+  return host.length() > 0;
+}
+
+// Shared last-known-good server address (issue #4). Both WEATHER_URL and AIR_URL
+// point at the same host, so one cache serves both. The ESP32 resolver starts
+// returning 0.0.0.0 once the DNS record's TTL lapses (dns_ok=1 but dns_ip=
+// 0.0.0.0), so we connect straight to this IP instead of trusting live
+// resolution. Seeded with the known static droplet IP so the first request works
+// before any lookup; FetchWeatherReport refreshes it whenever a lookup returns a
+// valid address, and it is never overwritten by a 0.0.0.0. Update this seed if
+// the droplet is ever rebuilt.
+IPAddress server_ip(161, 35, 100, 35);
+
+// HTTP GET against the cached server IP, bypassing DNS in the request path. We
+// can't use HTTPClient here: it derives the Host header from the connect target
+// and ignores any Host we set, but the server is name-based virtual-hosted and
+// needs Host: <hostname>. So parse the host out of `url`, connect to the cached
+// IP, and send the host in the header ourselves. If `payload` is non-null it
+// receives the response body (weather); pass nullptr when the body is unneeded
+// (air reports). Runs on the network task, so the bounded blocking reads never
+// touch the render loop. Returns true on a 200 (and, when a payload was
+// requested, a non-empty body).
+bool HttpGetViaCachedIp(const String& url, String* payload) {
+  String host, path;
+  if (!SplitUrl(url, host, path)) return false;
+
+  WiFiClient client;
+  if (!client.connect(server_ip, 80, kHttpConnectTimeoutMs)) return false;
+
+  client.print(String("GET ") + path + " HTTP/1.1\r\n"
+               + "Host: " + host + "\r\n"
+               + "User-Agent: kitchen-lights\r\n"
+               + "Connection: close\r\n"
+               + "\r\n");
+
+  // Everything below is bounded by this single deadline so a half-open socket
+  // can never wedge the task the way the DNS failure used to.
+  const unsigned long deadline = millis() + kHttpTimeoutMs;
+
+  // Wait for the first response byte.
+  while (client.connected() && client.available() == 0) {
+    if ((long)(millis() - deadline) >= 0) { client.stop(); return false; }
+    delay(5);
+  }
+
+  // Status line, e.g. "HTTP/1.1 200 OK". Anything but 200 is a miss.
+  String status_line = client.readStringUntil('\n');
+  if (status_line.indexOf(" 200") < 0) { client.stop(); return false; }
+
+  // Skip response headers up to the blank line that ends them.
+  while (client.connected() || client.available()) {
+    String line = client.readStringUntil('\n');
+    if (line.length() <= 1) break;  // just the trailing '\r' -> end of headers
+    if ((long)(millis() - deadline) >= 0) { client.stop(); return false; }
+  }
+
+  // Body: we asked for "Connection: close", so a static file / short ack arrives
+  // as one span the server closes after (no chunking). Read until the socket
+  // closes or the deadline trips.
+  String body;
+  while (client.connected() || client.available()) {
+    while (client.available()) {
+      body += (char)client.read();
+    }
+    if (!client.connected()) break;
+    if ((long)(millis() - deadline) >= 0) break;
+    delay(2);
+  }
+  client.stop();
+
+  if (payload) {
+    if (body.length() == 0) return false;
+    *payload = body;
+  }
+  return true;
+}
+
+// Tally one network request outcome for the "Net: XX%" health readout. A
+// brown-out that refuses the WiFi connection and a GET that fails mid-request
+// both count as a miss here — exactly the symptom we're chasing in issue #4.
+void RecordNetworkResult(bool succeeded) {
+  network_calls_attempted += 1;
+  if (succeeded) {
+    network_calls_succeeded += 1;
+  }
+}
+
 void FetchWeatherReport() {
   // Record the attempt time up front so the retry cadence stays fixed at ~30s
   // even when WiFi is down or the request fails. (Previously this was only
   // updated on success, so during an outage it retried every loop iteration.)
   millis_when_weather_last_fetched = millis();
 
+  bool succeeded = false;
+  // Probe DNS every cycle, but only for two side effects: (1) refresh the cached
+  // IP when resolution actually returns a valid address, so a rebuilt droplet is
+  // picked up automatically while DNS is healthy; (2) keep dns_ok/dns_ip in the
+  // diagnostic line so we can still watch the resolver misbehave. The request
+  // itself never depends on this succeeding. (issue #4)
+  IPAddress dns_ip;
+  bool dns_ok = false;
+
   Serial.println("about to try to use wifi");
   if ((wifi_multi.run() == WL_CONNECTED)) {
 
-    HTTPClient http;
-    http.begin(WEATHER_URL);
-    http.setConnectTimeout(kHttpConnectTimeoutMs);
-    http.setTimeout(kHttpTimeoutMs);
-    Serial.print("Requesting ");
-    Serial.println(WEATHER_URL);
-    // start connection and send HTTP header
-    int http_code = http.GET();
-
-    // http_code will be negative on error
-    if (http_code > 0) {
-      // HTTP header has been send and Server response header has been handled
-      // file found at server
-      if (http_code == HTTP_CODE_OK) {
-        String payload = http.getString();
-        // Publish the parsed result under the lock so the render loop never
-        // sees a half-cleared array or a torn time value.
-        LockWeatherState();
-        ParseWeatherReport(payload);
-        UnlockWeatherState();
-        Serial.print("Weather report: ");
-        Serial.print(millis_when_weather_last_fetched);
-        Serial.print(" - ");
-        Serial.println(payload);
-      }
-    } else {
-      Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(http_code).c_str());
+    dns_ok = WiFi.hostByName(WeatherHost(), dns_ip);
+    if (dns_ok && dns_ip != IPAddress(0, 0, 0, 0)) {
+      server_ip = dns_ip;  // last-known-good; never overwritten by a 0.0.0.0
     }
 
-    http.end();
+    Serial.print("Requesting ");
+    Serial.print(WEATHER_URL);
+    Serial.print(" @ ");
+    Serial.println(server_ip.toString());
+
+    String payload;
+    if (HttpGetViaCachedIp(WEATHER_URL, &payload)) {
+      // Publish the parsed result under the lock so the render loop never
+      // sees a half-cleared array or a torn time value.
+      LockWeatherState();
+      ParseWeatherReport(payload);
+      UnlockWeatherState();
+      succeeded = true;
+      Serial.print("Weather report: ");
+      Serial.print(millis_when_weather_last_fetched);
+      Serial.print(" - ");
+      Serial.println(payload);
+    } else {
+      Serial.println("[HTTP] weather fetch failed");
+    }
   }
+
+  RecordNetworkResult(succeeded);
+
+  // One-line health snapshot per attempt. dns_ip going 0.0.0.0 while used_ip
+  // holds steady is the fix working: the resolver is failing but we keep hitting
+  // the cached address. Other fields still flag heap/stack/link regressions.
+  Serial.printf("[net] heap=%u minheap=%u maxblk=%u stackfree=%u status=%d ip=%s rssi=%d dns_ok=%d dns_ip=%s used_ip=%s net=%u/%u\n",
+                ESP.getFreeHeap(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap(),
+                (unsigned)uxTaskGetStackHighWaterMark(NULL),
+                WiFi.status(), WiFi.localIP().toString().c_str(), WiFi.RSSI(),
+                dns_ok, dns_ok ? dns_ip.toString().c_str() : "-",
+                server_ip.toString().c_str(),
+                network_calls_succeeded, network_calls_attempted);
 }
 
 // Caller must hold weather_state_mutex: this rewrites the shared weather_report[]
@@ -140,30 +274,19 @@ void EnqueueAirReport(const String& air_url) {
 }
 
 void SendAirReport(String air_url) {
+  bool succeeded = false;
   // wait for WiFi connection
   if ((wifi_multi.run() == WL_CONNECTED)) {
-
-    HTTPClient http;
-    http.begin(air_url);
-    http.setConnectTimeout(kHttpConnectTimeoutMs);
-    http.setTimeout(kHttpTimeoutMs);
-    // start connection and send HTTP header
-    int http_code = http.GET();
-
-    // http_code will be negative on error
-    if (http_code > 0) {
-      // HTTP header has been send and Server response header has been handled
-      // file found at server
-      if (http_code == HTTP_CODE_OK) {
-        String payload = http.getString();
-        Serial.println(payload);
-      }
-    } else {
-      Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(http_code).c_str());
+    // Same cached-IP path as the weather fetch, so air reports survive the DNS
+    // TTL failure too (issue #4). The cache is kept fresh by FetchWeatherReport
+    // on its 30s cadence; we don't need the response body here.
+    succeeded = HttpGetViaCachedIp(air_url, nullptr);
+    if (!succeeded) {
+      Serial.println("[HTTP] air report failed");
     }
-
-    http.end();
   }
+
+  RecordNetworkResult(succeeded);
 }
 #endif // IS_AIR_SENSOR_ENABLED
 

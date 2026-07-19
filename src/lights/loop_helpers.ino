@@ -16,17 +16,41 @@ String PrepareTopMessage(uint8_t switch_pos) {
   return result;
 }
 
+// Format the boot-lifetime network success rate as "Net: XX%", rounded to the
+// nearest whole percent. Reads the counters that the network task keeps in
+// network.ino; when WiFi is compiled out there's nothing to report.
+String NetworkStatsMessage() {
+#if IS_WIFI_ENABLED
+  uint32_t attempted = network_calls_attempted;
+  uint32_t succeeded = network_calls_succeeded;
+  // Before the first attempt completes there's nothing to average; call it 100%.
+  int percent = 100;
+  if (attempted > 0) {
+    // Integer round-half-up of succeeded/attempted*100.
+    percent = (int)((succeeded * 200UL + attempted) / (attempted * 2UL));
+  }
+  return "Net: " + String(percent) + "%";
+#else
+  return "";
+#endif
+}
+
 String PrepareBottomMessage() {
   LockWeatherState();
-  if (current_weather_report_display >= kWeatherReportMaxLength ||
-      weather_report[current_weather_report_display].length() == 0) {
-    current_weather_report_display = 1;
-  }
-  String result = weather_report[current_weather_report_display];
+  // Once the rotation runs off the end of the real weather tokens, show one
+  // network-health frame before wrapping back to the top.
+  bool at_end = (current_weather_report_display >= kWeatherReportMaxLength ||
+                 weather_report[current_weather_report_display].length() == 0);
+  String result = at_end ? "" : weather_report[current_weather_report_display];
   UnlockWeatherState();
+
+  if (at_end) {
+    result = NetworkStatsMessage();
+  }
+
   if (millis() - millis_when_bottom_row_updated > 3000) {
     millis_when_bottom_row_updated = millis();
-    current_weather_report_display += 1;
+    current_weather_report_display = at_end ? 1 : current_weather_report_display + 1;
     is_display_dirty = true;
   }
   return result;
