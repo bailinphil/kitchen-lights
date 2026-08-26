@@ -53,7 +53,13 @@ void loop(){
     detected_presence = CheckPresence();
   }
   if (detected_presence != 0) {
-    Serial.println("Presence interrupt fired, motion and presence detected.");
+    Serial.println("           ");
+    Serial.println("           ");
+    Serial.println("+-------------------------------------------------------------------------------+");
+    Serial.println("|          Presence interrupt fired, motion and presence detected.              |");
+    Serial.println("+-------------------------------------------------------------------------------+");
+    Serial.println("           ");
+    Serial.println("           ");
     // If lights were off or fading out, start a fade-in.
     // If mid-fade-out, backdate the fade-in start so it resumes from current
     // brightness instead of snapping to darkness first.
