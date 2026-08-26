@@ -524,6 +524,7 @@ int16_t CheckPresence() {
   sths34pf80_tmos_func_status_t status;
   if (presence_sensor.getStatus(&status) != 0) {
     Serial.println("I2C error reading presence status");
+    RecoverPresenceI2CBus();
     return 0;
   }
 
@@ -534,6 +535,7 @@ int16_t CheckPresence() {
     // Presence Units: cm^-1
     if (presence_sensor.getPresenceValue(&presence_val) != 0) {
       Serial.println("I2C error reading presence value");
+      RecoverPresenceI2CBus();
       return 0;
     }
     Serial.print("Presence+Motion: ");

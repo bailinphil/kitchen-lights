@@ -284,8 +284,10 @@ volatile bool presence_data_ready = false;
 constexpr unsigned long kPresenceTimeoutMs = 120000;        // 2 minutes
 constexpr unsigned long kFadeDurationMs = 3000;
 constexpr unsigned long kFadeInDurationMs = 3000;
+constexpr uint16_t kPresenceI2CTimeoutMs = 50;  // matches Wire's own default; set explicitly so it doesn't depend on core defaults
 float FadeOutBrightnessRatio(unsigned long fade_out_elapsed);
 int ApplyPresenceFade(int brightness, unsigned long timeout = kPresenceTimeoutMs);
+void RecoverPresenceI2CBus();
 #endif // IS_PRESENCE_ENABLED
 
 /*
@@ -401,6 +403,7 @@ void IRAM_ATTR OnPresenceInterrupt() {
 
 void SetupPresence() {
     Wire1.begin(kPresenceSda, kPresenceScl);
+    Wire1.setTimeOut(kPresenceI2CTimeoutMs);
     // Establish communication with device on its own I2C bus
     if (presence_sensor.begin(STHS34PF80_I2C_ADDRESS, Wire1) == false) {
       Serial.println("Error setting up presence sensor - please check wiring.");
@@ -415,6 +418,45 @@ void SetupPresence() {
 
     pinMode(kPresenceIntPin, INPUT);
     attachInterrupt(digitalPinToInterrupt(kPresenceIntPin), OnPresenceInterrupt, FALLING);
+}
+
+// Called whenever a presence I2C call comes back with an error. Wire1's own
+// timeout (see kPresenceI2CTimeoutMs) stops a single call from blocking
+// forever, but it doesn't put the bus back into a usable state: a slave that
+// faulted mid-byte can be left holding SDA low, which fails every subsequent
+// transaction until something manually clocks it free. This does the
+// standard I2C bus-recovery dance and re-establishes the Wire1 peripheral.
+void RecoverPresenceI2CBus() {
+  Serial.print(millis());
+  Serial.println(": Recovering presence I2C bus (Wire1)");
+
+  Wire1.end();
+
+  pinMode(kPresenceScl, OUTPUT);
+  pinMode(kPresenceSda, INPUT_PULLUP);
+
+  // A slave stuck mid-byte holds SDA low. Toggling SCL up to 9 times (one per
+  // bit of the largest possible transfer) lets it finish clocking out
+  // whatever it was sending and release the line.
+  for (int i = 0; i < 9 && digitalRead(kPresenceSda) == LOW; i++) {
+    digitalWrite(kPresenceScl, LOW);
+    delayMicroseconds(5);
+    digitalWrite(kPresenceScl, HIGH);
+    delayMicroseconds(5);
+  }
+
+  // Leave the bus in a clean idle state with a manual STOP condition (SDA
+  // rising while SCL is high) before handing it back to the Wire driver.
+  pinMode(kPresenceSda, OUTPUT);
+  digitalWrite(kPresenceSda, LOW);
+  delayMicroseconds(5);
+  digitalWrite(kPresenceScl, HIGH);
+  delayMicroseconds(5);
+  digitalWrite(kPresenceSda, HIGH);
+  delayMicroseconds(5);
+
+  Wire1.begin(kPresenceSda, kPresenceScl);
+  Wire1.setTimeOut(kPresenceI2CTimeoutMs);
 }
 #endif
 
