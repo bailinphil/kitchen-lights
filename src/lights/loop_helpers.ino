@@ -8,7 +8,7 @@ String PrepareTopMessage(uint8_t switch_pos) {
   LockWeatherState();
   String report0 = weather_report[0];
   UnlockWeatherState();
-  String result = report0 + " " + mode_name[switch_pos];
+  String result = report0 + " " + kModes[switch_pos].name;
   if (!result.equals(previous_message_top)) {
     is_display_dirty = true;
     previous_message_top = result;
@@ -604,7 +604,7 @@ CRGB GetRoutineColor() {
   UnlockWeatherState();
 
   if (now_hours < 0 || sr_hours < 0 || ss_hours < 0) {
-    return mode_color[kRoutineModeIndex];
+    return kModes[kRoutineModeIndex].led_color;
   }
   int now     = now_hours * 60 + now_minutes;
   int sunrise = sr_hours  * 60 + sr_minutes;
@@ -613,12 +613,12 @@ CRGB GetRoutineColor() {
   if(millis() % 5000 < 10) Serial.printf("now: %d  | sunrise: %d |  sunset: %d\n", now, sunrise, sunset);
 
 
-  if (now < sunrise - 60)  return mode_color[kNightModeIndex];   // deep night
-  if (now < sunrise + 30)  return mode_color[4];                  // Dishes — near sunrise
-  if (now < sunset  - 120)  return mode_color[2];                  // Cook Day
-  if (now < sunset)        return mode_color[3];                  // Cook Night — pre-sunset
-  if (now_hours < 23 )     return mode_color[4];                  // Dishes — post-sunset
-  return mode_color[kNightModeIndex];                            // night
+  if (now < sunrise - 60)  return kModes[kNightModeIndex].led_color;       // deep night
+  if (now < sunrise + 30)  return kModes[kDishesModeIndex].led_color;      // near sunrise
+  if (now < sunset - 120)  return kModes[kCookDayModeIndex].led_color;
+  if (now < sunset)        return kModes[kCookNightModeIndex].led_color;   // pre-sunset
+  if (now_hours < 23)      return kModes[kDishesModeIndex].led_color;      // post-sunset
+  return kModes[kNightModeIndex].led_color;                                // night
 }
 #endif // IS_FASTLED_ENABLED
 

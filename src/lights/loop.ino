@@ -121,7 +121,7 @@ void loop(){
     }
 #endif // IS_FASTLED_ENABLED
   }
-  uint8_t* tc = twist_colors[next_switch_position];
+  const uint8_t* tc = kModes[next_switch_position].twist_rgb;
   twist.setColor(tc[0],tc[1],tc[2]);
 #endif // IS_TWIST_ENABLED
 
@@ -150,7 +150,7 @@ void loop(){
       is_led_dirty = false;
     }
   } else if (is_led_dirty) {
-    SetAllLeds(mode_color[next_switch_position]);
+    SetAllLeds(kModes[next_switch_position].led_color);
     FastLED.show();
     is_led_dirty = false;
   }

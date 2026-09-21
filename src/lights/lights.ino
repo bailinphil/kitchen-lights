@@ -66,9 +66,10 @@ unsigned long millis_when_air_last_reported = 0;
 /*
  * LED Strip
  */
-#if IS_FASTLED_ENABLED
+// Included even when the strips are disabled: kModes (below) uses CRGB.
 #include <FastLED.h>
 
+#if IS_FASTLED_ENABLED
 // LED chipset configuration
 #define CHIPSET     WS2811
 #define COLOR_ORDER BRG
@@ -102,7 +103,6 @@ int previous_brightness;
 bool is_led_dirty = true;
 
 // Rainbow mode state
-constexpr int kRainbowModeIndex = 7;
 constexpr unsigned long kRainbowPropagationMs = 3000;
 uint8_t rainbow_hue = 0;
 bool    rainbow_auto_cycle = true;
@@ -110,7 +110,6 @@ unsigned long millis_of_last_rainbow_shift = 0;
 int     rainbow_twist_baseline = 0;
 
 // Twinkle mode state
-constexpr int kTwinkleModeIndex = 8;
 constexpr int kTwinkleMaxActive = 30;
 constexpr unsigned long kTwinkleSpotLifetime = 1500;    // ms — how long a spot fades in and spreads
 constexpr int kTwinkleFadeAmount = 5;                   // per-loop fade; ~2–4s full decay at 5ms loop
@@ -139,12 +138,7 @@ unsigned long millis_between_twinkle_spawns = kTwinkleDefaultSpawnMs;
 unsigned long millis_of_last_twinkle_spawn = 0;
 int     twinkle_twist_baseline = 0;
 
-// Mode indices
-constexpr int kRoutineModeIndex = 1;
-constexpr int kNightModeIndex = 5;
-
 // Fire mode state
-constexpr int kFireModeIndex = 6;
 constexpr int kFireCooling = 55;           // higher = shorter flames, more cooling per frame
 constexpr int kFireSparking = 120;         // chance (out of 255) of a new spark each frame
 constexpr int kFireMinSparking = 40;       // calmest embers
@@ -168,33 +162,41 @@ constexpr int kModeSwitchPin = A5;
 int candidate_switch_position = -1;
 int committed_switch_position = 0;
 unsigned long millis_when_candidate_changed = 0;
-String mode_name[] = {
-  "Standby",
-  "Routine",
-  "Cook Day",
-  "Cook Night",
-  "Dishes",
-  "Night",
-  "Fire",
-  "Rainbow",
-  "Twinkle",
-  "Away",
+
+// One row per position of the mode switch, in switch order. The index
+// constants name the rows that other code refers to; keep them in step with
+// the table.
+constexpr int kStandbyModeIndex = 0;
+constexpr int kRoutineModeIndex = 1;
+constexpr int kCookDayModeIndex = 2;
+constexpr int kCookNightModeIndex = 3;
+constexpr int kDishesModeIndex = 4;
+constexpr int kNightModeIndex = 5;
+constexpr int kFireModeIndex = 6;
+constexpr int kRainbowModeIndex = 7;
+constexpr int kTwinkleModeIndex = 8;
+constexpr int kAwayModeIndex = 9;
+
+struct ModeInfo {
+  const char* name;      // shown on the 16x2 display
+  CRGB led_color;        // solid color for the strips
+  uint8_t twist_rgb[3];  // color of the Twist knob's LED
 };
 
-#if IS_FASTLED_ENABLED
-CRGB mode_color[] = {
-  CRGB::Black,       // Standby
-  CRGB::White,       // Routine
-  CRGB::Seashell,    // Cook Day
-  CRGB::LightSalmon, // Cook Night
-  CRGB::DarkOrange,  // Dishes
-  CRGB::Red,         // Night
-  CRGB::OrangeRed,   // Fire (fallback — Fire has its own update path)
-  CRGB::Goldenrod,   // Rainbow (unused — Rainbow has its own update path)
-  CRGB::ForestGreen, // Twinkle (unused - Twinkle has its own palette)
-  CRGB::Black,     // Away
+const ModeInfo kModes[] = {
+  {"Standby",    CRGB::Black,       {  0,   0,   0}},
+  {"Routine",    CRGB::White,       {100, 100,   0}},  // color overridden by GetRoutineColor()
+  {"Cook Day",   CRGB::Seashell,    {150, 150, 150}},
+  {"Cook Night", CRGB::LightSalmon, {150, 100,  50}},
+  {"Dishes",     CRGB::DarkOrange,  {100,  30,   0}},
+  {"Night",      CRGB::Red,         { 40,   2,   0}},
+  {"Fire",       CRGB::OrangeRed,   {255,  80,   0}},  // strips have their own update path
+  {"Rainbow",    CRGB::Goldenrod,   {  0, 255,   0}},  // strips have their own update path
+  {"Twinkle",    CRGB::ForestGreen, {  0,   0, 255}},  // strips have their own palette
+  {"Away",       CRGB::Black,       {  0,  40,  40}},
 };
-#endif
+constexpr int kNumModes = sizeof(kModes) / sizeof(kModes[0]);
+static_assert(kNumModes == 10, "the mode switch has 10 positions (see GetSwitchPosition)");
 
 /*
  * Twist
@@ -210,19 +212,6 @@ constexpr int kTwistBrightnessWindowSize = 20;
 int twist_brightness_window_center = 0;
 int twist_brightness_window_min = - (kTwistBrightnessWindowSize / 2);
 int twist_brightness_window_max = (kTwistBrightnessWindowSize / 2);
-
-uint8_t twist_colors[][3] = {
-  {  0,   0,   0},  // Standby
-  {100, 100,   0},  // Routine
-  {150, 150, 150},  // Cook Day
-  {150, 100,  50},  // Cook Night
-  {100,  30,   0},  // Dishes
-  { 40,   2,   0},  // Night
-  {255,  80,   0},  // Fire
-  {  0, 255,   0},  // Rainbow
-  {  0,   0, 255},  // Twinkle
-  {  0,  40,  40},  // Away
-};
 #endif
 
 constexpr int kWeatherReportMaxLength = 10;
