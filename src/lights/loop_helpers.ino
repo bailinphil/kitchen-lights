@@ -615,9 +615,9 @@ CRGB GetRoutineColor() {
 
   if (now < sunrise - 60)  return mode_color[kNightModeIndex];   // deep night
   if (now < sunrise + 30)  return mode_color[4];                  // Dishes — near sunrise
-  if (now < sunset  - 60)  return mode_color[2];                  // Cook Day
+  if (now < sunset  - 120)  return mode_color[2];                  // Cook Day
   if (now < sunset)        return mode_color[3];                  // Cook Night — pre-sunset
-  if (now < sunset  + 60)  return mode_color[4];                  // Dishes — post-sunset
+  if (now_hours < 23 )     return mode_color[4];                  // Dishes — post-sunset
   return mode_color[kNightModeIndex];                            // night
 }
 #endif // IS_FASTLED_ENABLED
