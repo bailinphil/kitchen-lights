@@ -88,6 +88,16 @@ constexpr int kNumLedsPin25 = kUnderCabRight + kSinkRight + kOverSink +
                               kSinkLeft + kUnderCabCorner + kStove + kUnderCabLeft;
 CRGB leds_pin25[kNumLedsPin25];
 
+// Physical index of each segment's first LED. The strip's data starts at its
+// right end, so the offsets accumulate in the declaration order above.
+constexpr int kUnderCabRightStart = 0;
+constexpr int kSinkRightStart = kUnderCabRightStart + kUnderCabRight;
+constexpr int kOverSinkStart = kSinkRightStart + kSinkRight;
+constexpr int kSinkLeftStart = kOverSinkStart + kOverSink;
+constexpr int kUnderCabCornerStart = kSinkLeftStart + kSinkLeft;
+constexpr int kStoveStart = kUnderCabCornerStart + kUnderCabCorner;
+constexpr int kUnderCabLeftStart = kStoveStart + kStove;
+
 // Ceiling run — two pins acting as one logical strip, left to right.
 // Pin 17: wired right-to-left (reversed in software).
 // Pin 16: wired left-to-right (natural order).
@@ -177,23 +187,32 @@ constexpr int kRainbowModeIndex = 7;
 constexpr int kTwinkleModeIndex = 8;
 constexpr int kAwayModeIndex = 9;
 
+// Areas of the kitchen a solid-color mode can light; combine with |.
+enum LightZone : uint8_t {
+  kZoneCabinets = 1 << 0,  // under-cabinet segments and the stove
+  kZoneSink     = 1 << 1,  // the climbs beside the sink and the run over it
+  kZoneCeiling  = 1 << 2,  // both ceiling strips
+  kZoneAll      = kZoneCabinets | kZoneSink | kZoneCeiling,
+};
+
 struct ModeInfo {
   const char* name;      // shown on the 16x2 display
   CRGB led_color;        // solid color for the strips
   uint8_t twist_rgb[3];  // color of the Twist knob's LED
+  uint8_t zones;         // LightZones lit by the solid color; the rest go dark
 };
 
 const ModeInfo kModes[] = {
-  {"Standby",    CRGB::Black,       {  0,   0,   0}},
-  {"Routine",    CRGB::White,       {100, 100,   0}},  // color overridden by GetRoutineColor()
-  {"Cook Day",   CRGB::Seashell,    {150, 150, 150}},
-  {"Cook Night", CRGB::LightSalmon, {150, 100,  50}},
-  {"Dishes",     CRGB::DarkOrange,  {100,  30,   0}},
-  {"Night",      CRGB::Red,         { 40,   2,   0}},
-  {"Fire",       CRGB::OrangeRed,   {255,  80,   0}},  // strips have their own update path
-  {"Rainbow",    CRGB::Goldenrod,   {  0, 255,   0}},  // strips have their own update path
-  {"Twinkle",    CRGB::ForestGreen, {  0,   0, 255}},  // strips have their own palette
-  {"Away",       CRGB::Black,       {  0,  40,  40}},
+  {"Standby",    CRGB::Black,       {  0,   0,   0}, kZoneAll},
+  {"Routine",    CRGB::White,       {100, 100,   0}, kZoneAll},  // fallback; GetRoutineMode() picks a mode by time of day
+  {"Cook Day",   CRGB::Seashell,    {150, 150, 150}, kZoneCabinets},
+  {"Cook Night", CRGB::LightSalmon, {150, 100,  50}, kZoneAll},
+  {"Dishes",     CRGB::DarkOrange,  {100,  30,   0}, kZoneAll},
+  {"Night",      CRGB::Red,         { 40,   2,   0}, kZoneAll},
+  {"Fire",       CRGB::OrangeRed,   {255,  80,   0}, kZoneAll},  // strips have their own update path
+  {"Rainbow",    CRGB::Goldenrod,   {  0, 255,   0}, kZoneAll},  // strips have their own update path
+  {"Twinkle",    CRGB::ForestGreen, {  0,   0, 255}, kZoneAll},  // strips have their own palette
+  {"Away",       CRGB::Black,       {  0,  40,  40}, kZoneAll},
 };
 constexpr int kNumModes = sizeof(kModes) / sizeof(kModes[0]);
 static_assert(kNumModes == 10, "the mode switch has 10 positions (see GetSwitchPosition)");

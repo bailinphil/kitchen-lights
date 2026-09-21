@@ -142,15 +142,18 @@ void loop(){
   } else if (next_switch_position == kTwinkleModeIndex) {
     UpdateTwinkle();
   } else if (next_switch_position == kRoutineModeIndex) {
-    CRGB routine_color = GetRoutineColor();
+    // Routine borrows both the color and the zones of the mode that suits
+    // the time of day.
+    int routine_mode = GetRoutineMode();
+    CRGB routine_color = kModes[routine_mode].led_color;
     if (is_led_dirty || routine_color != previous_color) {
-      SetAllLeds(routine_color);
+      SetNormalModeLeds(routine_mode, routine_color);
       FastLED.show();
       previous_color = routine_color;
       is_led_dirty = false;
     }
   } else if (is_led_dirty) {
-    SetAllLeds(kModes[next_switch_position].led_color);
+    SetNormalModeLeds(next_switch_position, kModes[next_switch_position].led_color);
     FastLED.show();
     is_led_dirty = false;
   }

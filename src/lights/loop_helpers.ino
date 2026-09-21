@@ -124,6 +124,22 @@ void SetCeilingLeds(CRGB color) {
   }
 }
 
+// Light the zones that a solid-color mode uses (see kModes) and turn off the
+// rest; e.g. Cook Day lights only the cabinets and stove.
+void SetNormalModeLeds(int mode, CRGB color) {
+  uint8_t zones = kModes[mode].zones;
+  CRGB cabinets = (zones & kZoneCabinets) ? color : CRGB::Black;
+  CRGB sink = (zones & kZoneSink) ? color : CRGB::Black;
+  fill_solid(&leds_pin25[kUnderCabRightStart], kUnderCabRight, cabinets);
+  fill_solid(&leds_pin25[kSinkRightStart], kSinkRight, sink);
+  fill_solid(&leds_pin25[kOverSinkStart], kOverSink, sink);
+  fill_solid(&leds_pin25[kSinkLeftStart], kSinkLeft, sink);
+  fill_solid(&leds_pin25[kUnderCabCornerStart], kUnderCabCorner, cabinets);
+  fill_solid(&leds_pin25[kStoveStart], kStove, cabinets);
+  fill_solid(&leds_pin25[kUnderCabLeftStart], kUnderCabLeft, cabinets);
+  SetCeilingLeds((zones & kZoneCeiling) ? color : CRGB::Black);
+}
+
 // Fill every LED on every strip with the same color.
 void SetAllLeds(CRGB color) {
   SetUnderCabinetLeds(color);
@@ -587,13 +603,13 @@ int ApplyPresenceFade(int brightness, unsigned long timeout) {
  * WEATHER                                                                   *
  *                                                                           *
  ****************************************************************************/
-// Returns the LED color Routine mode should use based on the current time
-// relative to sunrise and sunset. Falls back to the default Routine color
-// if time data hasn't been parsed yet.
+// Returns the index of the mode whose color and zones Routine should borrow,
+// based on the current time relative to sunrise and sunset. Falls back to
+// Routine's own row if time data hasn't been parsed yet.
 #if IS_FASTLED_ENABLED
-CRGB GetRoutineColor() {
+int GetRoutineMode() {
   // Snapshot the shared time state under the lock so the network task can't
-  // rewrite it mid-read (a torn time would pick the wrong color).
+  // rewrite it mid-read (a torn time would pick the wrong mode).
   LockWeatherState();
   int now_hours   = current_time_hours;
   int now_minutes = current_time_minutes;
@@ -604,7 +620,7 @@ CRGB GetRoutineColor() {
   UnlockWeatherState();
 
   if (now_hours < 0 || sr_hours < 0 || ss_hours < 0) {
-    return kModes[kRoutineModeIndex].led_color;
+    return kRoutineModeIndex;
   }
   int now     = now_hours * 60 + now_minutes;
   int sunrise = sr_hours  * 60 + sr_minutes;
@@ -613,12 +629,12 @@ CRGB GetRoutineColor() {
   if(millis() % 5000 < 10) Serial.printf("now: %d  | sunrise: %d |  sunset: %d\n", now, sunrise, sunset);
 
 
-  if (now < sunrise - 60)  return kModes[kNightModeIndex].led_color;       // deep night
-  if (now < sunrise + 30)  return kModes[kDishesModeIndex].led_color;      // near sunrise
-  if (now < sunset - 120)  return kModes[kCookDayModeIndex].led_color;
-  if (now < sunset)        return kModes[kCookNightModeIndex].led_color;   // pre-sunset
-  if (now_hours < 23)      return kModes[kDishesModeIndex].led_color;      // post-sunset
-  return kModes[kNightModeIndex].led_color;                                // night
+  if (now < sunrise - 60)  return kNightModeIndex;       // deep night
+  if (now < sunrise + 30)  return kDishesModeIndex;      // near sunrise
+  if (now < sunset - 120)  return kCookDayModeIndex;
+  if (now < sunset)        return kCookNightModeIndex;   // pre-sunset
+  if (now_hours < 23)      return kDishesModeIndex;      // post-sunset
+  return kNightModeIndex;                                // night
 }
 #endif // IS_FASTLED_ENABLED
 
