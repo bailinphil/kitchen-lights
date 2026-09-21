@@ -418,11 +418,10 @@ void SetupPresence() {
       while(1);
     }
 
-    // Route presence+motion flags to the INT pin, latched until
-    // the status register is read.
+    // Route presence+motion flags to the INT pin.
     presence_sensor.setTmosRouteInterrupt(STHS34PF80_TMOS_INT_OR);
     presence_sensor.setTmosInterruptOR(STHS34PF80_TMOS_INT_MOTION_PRESENCE);
-    presence_sensor.setInterruptPulsed(1);  // latched: INT stays low until status is read
+    presence_sensor.setInterruptPulsed(1);  // pulsed: INT pulses once per sample and releases itself
 
     pinMode(kPresenceIntPin, INPUT);
     attachInterrupt(digitalPinToInterrupt(kPresenceIntPin), OnPresenceInterrupt, FALLING);

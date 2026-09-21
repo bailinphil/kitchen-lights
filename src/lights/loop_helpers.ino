@@ -536,7 +536,7 @@ int16_t CheckPresence() {
   sths34pf80_tmos_drdy_status_t data_ready;
   presence_sensor.getDataReady(&data_ready);
 
-  // Read the status register (clears the interrupt latch on the INT pin).
+  // Read the status register for the presence and motion flags.
   sths34pf80_tmos_func_status_t status;
   if (presence_sensor.getStatus(&status) != 0) {
     Serial.println("I2C error reading presence status");
